@@ -6,9 +6,9 @@ from datetime import datetime
 import pytz
 import os
 
-st.set_page_config(page_title="BD Pro Market & Journal", page_icon="📊", layout="centered")
-st.title("📊 প্রো মার্কেট ও ট্রেডিং জার্নাল")
-st.caption("ফরেক্স, গোল্ড, ইথিরিয়াম অ্যানালাইসিস, এন্ট্রি-এক্সিট ও ট্রেড হিস্ট্রি")
+st.set_page_config(page_title="BD Pro Market & SMC", page_icon="📊", layout="centered")
+st.title("📊 প্রো মার্কেট, SMC ও জার্নাল")
+st.caption("মাল্টি-টাইমফ্রেম, PDH/PDL, Smart Money Concept ও ট্রেড হিস্ট্রি")
 
 bd_tz = pytz.timezone('Asia/Dhaka')
 now_bd = datetime.now(bd_tz)
@@ -32,11 +32,24 @@ pairs = {
     "AUD/USD": "AUDUSD=X", "GOLD (XAU/USD)": "GC=F", "ETHEREUM (ETH/USD)": "ETH-USD"
 }
 
+tf_options = {
+    "5 মিনিট (5M)": ("5d", "5m"),
+    "15 মিনিট (15M)": ("5d", "15m"),
+    "1 ঘণ্টা (1H)": ("1mo", "1h"),
+    "4 ঘণ্টা (4H)": ("2mo", "4h")
+}
+
 def get_data(symbol, period, interval):
-    df = yf.download(symbol, period=period, interval=interval, progress=False)
+    fetch_int = "1h" if interval == "4h" else interval
+    df = yf.download(symbol, period=period, interval=fetch_int, progress=False)
+    if df is None or df.empty:
+        return pd.DataFrame()
     if isinstance(df.columns, pd.MultiIndex):
         df.columns = df.columns.get_level_values(0)
-    return df.dropna()
+    df = df.dropna()
+    if interval == "4h" and not df.empty:
+        df = df.resample("4h").agg({"Open": "first", "High": "max", "Low": "min", "Close": "last"}).dropna()
+    return df
 
 def get_trend(df):
     if len(df) < 50: return "ডেটা কম ⚪"
@@ -46,6 +59,14 @@ def get_trend(df):
     if c > e20 > e50: return "🟢 Bullish"
     if c < e20 < e50: return "🔴 Bearish"
     return "🟡 Ranging"
+
+def get_prev_day_hl(symbol, dec):
+    df_d = get_data(symbol, "5d", "1d")
+    if len(df_d) >= 2:
+        pdh = round(float(df_d['High'].iloc[-2]), dec)
+        pdl = round(float(df_d['Low'].iloc[-2]), dec)
+        return pdh, pdl
+    return None, None
 
 def analyze_zones(df, dec):
     c = float(df['Close'].iloc[-1])
@@ -57,23 +78,19 @@ def analyze_zones(df, dec):
     
     res_low, res_high = res - buf, res
     sup_low, sup_high = sup, sup + buf
-    
-    s_low, s_high = None, None
-    d_low, d_high = None, None
+    s_low, s_high, d_low, d_high = None, None, None, None
     
     avg_body = float((df['Close'] - df['Open']).abs().iloc[-25:-1].mean())
-    for i in range(len(df)-2, len(df)-20, -1):
+    for i in range(len(df)-2, max(len(df)-20, 1), -1):
         move = float(df['Close'].iloc[i] - df['Open'].iloc[i])
         if move > (avg_body * 1.8) and d_low is None:
             dl = float(df['Low'].iloc[i-1])
             dh = max(float(df['Open'].iloc[i-1]), float(df['Close'].iloc[i-1]))
-            if c > dh:
-                d_low, d_high = dl, dh
+            if c > dh: d_low, d_high = dl, dh
         if move < -(avg_body * 1.8) and s_low is None:
             sh = float(df['High'].iloc[i-1])
             sl_val = min(float(df['Open'].iloc[i-1]), float(df['Close'].iloc[i-1]))
-            if c < sl_val:
-                s_low, s_high = sl_val, sh
+            if c < sl_val: s_low, s_high = sl_val, sh
 
     sig = "⚪ কোনো ব্রেকআউট/রিটেস্ট নেই"
     active = False
@@ -101,44 +118,81 @@ def analyze_zones(df, dec):
         tp_price = entry - (risk * 2.0)
     else:
         direction = "WAIT / RANGE 🟡"
-        entry = sup_high
-        sl_price = sup_low - (buf * 0.5)
-        tp_price = res_low
+        entry, sl_price, tp_price = sup_high, sup_low - (buf * 0.5), res_low
 
     return {
-        "price": round(c, dec),
-        "res_b": (res_low, res_high),
-        "sup_b": (sup_low, sup_high),
+        "price": round(c, dec), "res_b": (res_low, res_high), "sup_b": (sup_low, sup_high),
         "supply_b": (s_low, s_high) if s_low is not None else None,
         "demand_b": (d_low, d_high) if d_low is not None else None,
         "res_t": f"{round(res_low, dec)} - {round(res_high, dec)}",
         "sup_t": f"{round(sup_low, dec)} - {round(sup_high, dec)}",
         "supply_t": f"{round(s_low, dec)} - {round(s_high, dec)}" if s_low is not None else "ফ্রেশ জোন নেই",
         "demand_t": f"{round(d_low, dec)} - {round(d_high, dec)}" if d_low is not None else "ফ্রেশ জোন নেই",
-        "sig": sig, "active": active,
-        "dir": direction,
-        "entry": round(entry, dec),
-        "sl": round(sl_price, dec),
-        "tp": round(tp_price, dec)
+        "sig": sig, "active": active, "dir": direction,
+        "entry": round(entry, dec), "sl": round(sl_price, dec), "tp": round(tp_price, dec)
     }
 
-tab1, tab2, tab3 = st.tabs(["📊 চার্ট ও জোন", "🚀 অল-পেয়ার স্ক্যানার", "📒 ট্রেডিং জার্নাল"])
+def analyze_smc(df, dec):
+    c = float(df['Close'].iloc[-1])
+    swing_h = float(df.iloc[-25:-3]['High'].max())
+    swing_l = float(df.iloc[-25:-3]['Low'].min())
+    
+    # BOS ও CHoCH ডিটেকশন
+    trend = get_trend(df)
+    if c > swing_h:
+        structure = f"🟢 Bullish BOS / CHoCH ({round(swing_h, dec)} ব্রেক)"
+    elif c < swing_l:
+        structure = f"🔴 Bearish BOS / CHoCH ({round(swing_l, dec)} ব্রেক)"
+    else:
+        structure = f"🟡 Internal Structure ({round(swing_l, dec)} - {round(swing_h, dec)})"
+
+    # Fair Value Gap (FVG) ও Order Block (OB) খোঁজা
+    bull_fvg, bear_fvg = None, None
+    bull_ob, bear_ob = None, None
+
+    for i in range(len(df)-2, max(len(df)-25, 2), -1):
+        c1_h, c1_l = float(df['High'].iloc[i-2]), float(df['Low'].iloc[i-2])
+        c3_h, c3_l = float(df['High'].iloc[i]), float(df['Low'].iloc[i])
+        
+        # Bullish FVG
+        if c3_l > c1_h and bull_fvg is None:
+            bull_fvg = (round(c1_h, dec), round(c3_l, dec))
+            if float(df['Close'].iloc[i-2]) < float(df['Open'].iloc[i-2]):
+                bull_ob = (round(float(df['Low'].iloc[i-2]), dec), round(float(df['High'].iloc[i-2]), dec))
+        # Bearish FVG
+        if c3_h < c1_l and bear_fvg is None:
+            bear_fvg = (round(c3_h, dec), round(c1_l, dec))
+            if float(df['Close'].iloc[i-2]) > float(df['Open'].iloc[i-2]):
+                bear_ob = (round(float(df['Low'].iloc[i-2]), dec), round(float(df['High'].iloc[i-2]), dec))
+
+    return {
+        "price": round(c, dec), "structure": structure, "trend": trend,
+        "bull_fvg": bull_fvg, "bear_fvg": bear_fvg,
+        "bull_ob": bull_ob, "bear_ob": bear_ob
+    }
+
+tab1, tab2, tab3, tab4 = st.tabs(["📊 চার্ট ও জোন", "🧠 SMC অ্যানালাইসিস", "🚀 স্ক্যানার", "📒 জার্নাল"])
 
 with tab1:
-    p_name = st.selectbox("পেয়ার বেছে নিন:", list(pairs.keys()))
-    if st.button(f"🔍 {p_name} চার্ট ও জোন দেখুন", use_container_width=True, type="primary"):
+    c_sel1, c_sel2 = st.columns(2)
+    p_name = c_sel1.selectbox("পেয়ার বেছে নিন:", list(pairs.keys()), key="t1_pair")
+    tf_label = c_sel2.selectbox("টাইমফ্রেম বেছে নিন:", list(tf_options.keys()), index=2, key="t1_tf")
+    
+    if st.button(f"🔍 {p_name} ({tf_label}) অ্যানালাইসিস", use_container_width=True, type="primary"):
         tk = pairs[p_name]
         dec = 2 if ("GC=F" in tk or "JPY" in tk or "ETH" in tk) else 5
-        df1d = get_data(tk, "6mo", "1d")
-        df1h = get_data(tk, "1mo", "1h")
-        df15m = get_data(tk, "5d", "15m")
-        if not df1h.empty:
-            z = analyze_zones(df1h, dec)
-            st.subheader(f"💰 প্রাইস: {z['price']}")
-            c1, c2, c3 = st.columns(3)
-            c1.metric("Daily (1D)", get_trend(df1d))
-            c2.metric("Hourly (1H)", get_trend(df1h))
-            c3.metric("15 Min (15M)", get_trend(df15m))
+        period, interval = tf_options[tf_label]
+        df_tf = get_data(tk, period, interval)
+        pdh, pdl = get_prev_day_hl(tk, dec)
+        
+        if not df_tf.empty:
+            z = analyze_zones(df_tf, dec)
+            st.subheader(f"💰 প্রাইস: {z['price']} ({tf_label})")
+            
+            m1, m2, m3 = st.columns(3)
+            m1.metric("ট্রেন্ড", get_trend(df_tf))
+            m2.metric("আগের দিনের High", pdh if pdh else "N/A")
+            m3.metric("আগের দিনের Low", pdl if pdl else "N/A")
             
             if z["active"]: st.success(z["sig"])
             else: st.info(z["sig"])
@@ -150,59 +204,14 @@ with tab1:
                 t2.metric("🛑 Stop Loss", z["sl"])
                 t3.metric("🏁 Exit (TP 1:2)", z["tp"])
             
-            plot_df = df1h.iloc[-45:]
+            plot_df = df_tf.iloc[-45:]
             fig = go.Figure(data=[go.Candlestick(x=plot_df.index, open=plot_df['Open'], high=plot_df['High'], low=plot_df['Low'], close=plot_df['Close'])])
-            fig.add_hrect(y0=z["res_b"][0], y1=z["res_b"][1], fillcolor="rgba(255,165,0,0.20)", line_color="orange", annotation_text="Resistance", annotation_position="top left")
-            fig.add_hrect(y0=z["sup_b"][0], y1=z["sup_b"][1], fillcolor="rgba(0,191,255,0.20)", line_color="deepskyblue", annotation_text="Support", annotation_position="bottom left")
+            fig.add_hrect(y0=z["res_b"], y1=z["res_b"], fillcolor="rgba(255,165,0,0.18)", line_color="orange", annotation_text="Res", annotation_position="top left")
+            fig.add_hrect(y0=z["sup_b"], y1=z["sup_b"], fillcolor="rgba(0,191,255,0.18)", line_color="deepskyblue", annotation_text="Sup", annotation_position="bottom left")
             if z["supply_b"]:
-                fig.add_hrect(y0=z["supply_b"][0], y1=z["supply_b"][1], fillcolor="rgba(255,0,0,0.25)", line_color="red", annotation_text="Supply", annotation_position="top right")
+                fig.add_hrect(y0=z["supply_b"], y1=z["supply_b"], fillcolor="rgba(255,0,0,0.22)", line_color="red", annotation_text="Supply", annotation_position="top right")
             if z["demand_b"]:
-                fig.add_hrect(y0=z["demand_b"][0], y1=z["demand_b"][1], fillcolor="rgba(0,200,83,0.25)", line_color="green", annotation_text="Demand", annotation_position="bottom right")
+                fig.add_hrect(y0=z["demand_b"], y1=z["demand_b"], fillcolor="rgba(0,200,83,0.22)", line_color="green", annotation_text="Demand", annotation_position="bottom right")
             
             fig.add_hline(y=z["entry"], line_dash="dash", line_color="#00E5FF", annotation_text=f"Entry: {z['entry']}", annotation_position="top left")
             fig.add_hline(y=z["sl"], line_dash="dot", line_color="#FF1744", annotation_text=f"SL: {z['sl']}", annotation_position="bottom left")
-            fig.add_hline(y=z["tp"], line_dash="dash", line_color="#00E676", annotation_text=f"Exit/TP: {z['tp']}", annotation_position="top right")
-
-            fig.update_layout(xaxis_rangeslider_visible=False, height=400, margin=dict(l=10, r=10, t=30, b=10), template="plotly_dark", xaxis_type="category")
-            fig.update_xaxes(showticklabels=False)
-            st.plotly_chart(fig, use_container_width=True)
-            
-            with st.container(border=True):
-                col1, col2 = st.columns(2)
-                col1.markdown(f"**🔴 Supply (Sell):**\n`{z['supply_t']}`")
-                col2.markdown(f"**🟢 Demand (Buy):**\n`{z['demand_t']}`")
-                st.divider()
-                col3, col4 = st.columns(2)
-                col3.markdown(f"**🟠 Resistance:**\n`{z['res_t']}`")
-                col4.markdown(f"**🔵 Support:**\n`{z['sup_t']}`")
-
-with tab2:
-    st.subheader("🚀 অল-পেয়ার স্ক্যানার (1H)")
-    if st.button("🔄 এখনই স্ক্যান করুন", use_container_width=True, type="primary"):
-        rows = []
-        for name, tk in pairs.items():
-            dec = 2 if ("GC=F" in tk or "JPY" in tk or "ETH" in tk) else 5
-            df = get_data(tk, "1mo", "1h")
-            if not df.empty:
-                z = analyze_zones(df, dec)
-                rows.append({"Pair": name, "Price": z["price"], "Setup": z["dir"], "Entry": z["entry"], "SL": z["sl"], "Exit (TP)": z["tp"], "Signal": z["sig"]})
-        st.dataframe(pd.DataFrame(rows), use_container_width=True, hide_index=True)
-
-with tab3:
-    st.subheader("📒 ট্রেডিং জার্নাল")
-    j_file = "journal.csv"
-    with st.form("j_form", clear_on_submit=True):
-        c1, c2 = st.columns(2)
-        jp = c1.selectbox("পেয়ার", list(pairs.keys()))
-        jt = c2.selectbox("পজিশন", ["BUY 🟢", "SELL 🔴"])
-        c3, c4 = st.columns(2)
-        jr = c3.selectbox("ফলাফল", ["Win ✅", "Loss ❌", "BE ⚪"])
-        jpnl = c4.number_input("প্রফিট/লস ($)", value=0.0, step=1.0)
-        jnote = st.text_input("নোট / স্ট্র্যাটেজি")
-        if st.form_submit_button("💾 সেভ করুন", use_container_width=True):
-            row = pd.DataFrame([{"Date": now_bd.strftime("%d-%b %I:%M%p"), "Pair": jp, "Type": jt, "Result": jr, "PnL ($)": jpnl, "Note": jnote}])
-            df_old = pd.read_csv(j_file) if os.path.exists(j_file) else pd.DataFrame()
-            pd.concat([row, df_old], ignore_index=True).to_csv(j_file, index=False)
-            st.success("✅ সেভ হয়েছে!")
-    if os.path.exists(j_file):
-        df_j = pd.read_csv(j_file)
