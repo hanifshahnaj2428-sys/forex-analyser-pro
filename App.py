@@ -23,19 +23,28 @@ tfs = {"5M": ("5d", "5m"), "15M": ("5d", "15m"), "1H": ("1mo", "1h"), "4H": ("2m
 def get_df(sym, p, iv):
     try:
         df = yf.download(sym, period=p, interval="1h" if iv=="4h" else iv, progress=False)
-        if df is None or df.empty: return pd.DataFrame()
-        if isinstance(df.columns, pd.MultiIndex): df.columns = df.columns.get_level_values(0)
+        if df is None or df.empty:
+            return pd.DataFrame()
+        if isinstance(df.columns, pd.MultiIndex):
+            df.columns = df.columns.get_level_values(0)
         df = df[['Open', 'High', 'Low', 'Close']].dropna()
-        return df.resample("4h").agg({"Open":"first","High":"max","Low":"min","Close":"last"}).dropna() if iv=="4h" else df
+        if iv == "4h":
+            return df.resample("4h").agg({"Open":"first","High":"max","Low":"min","Close":"last"}).dropna()
+        return df
     except Exception:
         return pd.DataFrame()
 
 def trend(df):
-    if len(df) < 30: return "N/A"
+    if len(df) < 30:
+        return "N/A"
     e20 = float(df['Close'].ewm(span=20).mean().iloc[-1])
     e50 = float(df['Close'].ewm(span=50).mean().iloc[-1])
     c = float(df['Close'].iloc[-1])
-    return "🟢 Bullish" if c > e20 > e50 else ("🔴 Bearish" if c < e20 < e50 else "🟡 Ranging")
+    if c > e20 > e50:
+        return "🟢 Bullish"
+    elif c < e20 < e50:
+        return "🔴 Bearish"
+    return "🟡 Ranging"
 
 def get_rsi(df):
     delta = df['Close'].diff()
@@ -68,7 +77,18 @@ def analyze(df, dec):
         tp = en - max(abs(stp-en), buf)*2
     else:
         d, en, stp, tp = "RANGE 🟡", sup+buf, sup-buf*0.5, res-buf
-    return {"p":round(c,dec), "res":(res-buf,res), "sup":(sup,sup+buf), "dem":(dl,dh) if dl else None, "sup_z":(sl,sh) if sl else None, "sig":sig, "dir":d, "en":round(en,dec), "sl":round(stp,dec), "tp":round(tp,dec)}
+    return {
+        "p": round(c, dec),
+        "res": (res-buf, res),
+        "sup": (sup, sup+buf),
+        "dem": (dl, dh) if dl else None,
+        "sup_z": (sl, sh) if sl else None,
+        "sig": sig,
+        "dir": d,
+        "en": round(en, dec),
+        "sl": round(stp, dec),
+        "tp": round(tp, dec)
+    }
 
 def make_candlestick_fig(df_slice, h=380):
     x_labels = [str(idx) for idx in df_slice.index]
@@ -122,15 +142,19 @@ with tab1:
             
             pdf = df.iloc[-45:]
             fig, _ = make_candlestick_fig(pdf, h=380)
-            fig.add_hrect(y0=z["res"], y1=z["res"], fillcolor="orange", opacity=0.2, annotation_text="Res")
-            fig.add_hrect(y0=z["sup"], y1=z["sup"], fillcolor="deepskyblue", opacity=0.2, annotation_text="Sup")
-            if z["dem"]: fig.add_hrect(y0=z["dem"], y1=z["dem"], fillcolor="green", opacity=0.25, annotation_text="Demand")
-            if z["sup_z"]: fig.add_hrect(y0=z["sup_z"], y1=z["sup_z"], fillcolor="red", opacity=0.25, annotation_text="Supply")
+            fig.add_hrect(y0=z["res"][0], y1=z["res"][1], fillcolor="orange", opacity=0.2, annotation_text="Res")
+            fig.add_hrect(y0=z["sup"][0], y1=z["sup"][1], fillcolor="deepskyblue", opacity=0.2, annotation_text="Sup")
+            if z["dem"]:
+                fig.add_hrect(y0=z["dem"][0], y1=z["dem"][1], fillcolor="green", opacity=0.25, annotation_text="Demand")
+            if z["sup_z"]:
+                fig.add_hrect(y0=z["sup_z"][0], y1=z["sup_z"][1], fillcolor="red", opacity=0.25, annotation_text="Supply")
             fig.add_hline(y=z["en"], line_dash="dash", line_color="cyan", annotation_text="Entry")
             fig.add_hline(y=z["sl"], line_dash="dot", line_color="red", annotation_text="SL")
             fig.add_hline(y=z["tp"], line_dash="dash", line_color="lime", annotation_text="Exit")
-            if pdh: fig.add_hline(y=pdh, line_dash="dashdot", line_color="gold", annotation_text="PDH")
-            if pdl: fig.add_hline(y=pdl, line_dash="dashdot", line_color="violet", annotation_text="PDL")
+            if pdh:
+                fig.add_hline(y=pdh, line_dash="dashdot", line_color="gold", annotation_text="PDH")
+            if pdl:
+                fig.add_hline(y=pdl, line_dash="dashdot", line_color="violet", annotation_text="PDL")
             st.plotly_chart(fig, use_container_width=True)
         else:
             st.warning("⚠️ ডেটা লোড হয়নি, কিছুক্ষণ পর আবার চেষ্টা করুন।")
@@ -171,7 +195,6 @@ with tab2:
             c = float(ps['Close'].iloc[-1])
             mid = len(ps) // 2
             
-            # পজিশনাল ইনডেক্স বের করা (iloc ভিত্তিক)
             h1_pos = int(ps.iloc[:mid]['High'].values.argmax())
             h2_pos = mid + int(ps.iloc[mid:-1]['High'].values.argmax())
             l1_pos = int(ps.iloc[:mid]['Low'].values.argmin())
@@ -192,15 +215,9 @@ with tab2:
             
             for i in range(len(ps)-2, 2, -1):
                 if float(ps['Low'].iloc[i]) > float(ps['High'].iloc[i-2]) and bfvg_l is None:
-                    bfvg_l, bfvg_h = round(float(ps['High'].iloc[i-2]),dec), round(float(ps['Low'].iloc[i]),dec)
+                    bfvg_l, bfvg_h = round(float(ps['High'].iloc[i-2]), dec), round(float(ps['Low'].iloc[i]), dec)
                     bfvg_idx = i
-                    bob_l, bob_h = round(float(ps['Low'].iloc[i-2]),dec), round(float(ps['High'].iloc[i-2]),dec)
+                    bob_l, bob_h = round(float(ps['Low'].iloc[i-2]), dec), round(float(ps['High'].iloc[i-2]), dec)
                 if float(ps['High'].iloc[i]) < float(ps['Low'].iloc[i-2]) and sfvg_l is None:
-                    sfvg_l, sfvg_h = round(float(ps['High'].iloc[i]),dec), round(float(ps['Low'].iloc[i-2]),dec)
+                    sfvg_l, sfvg_h = round(float(ps['High'].iloc[i]), dec), round(float(ps['Low'].iloc[i-2]), dec)
                     sfvg_idx = i
-                    sob_l, sob_h = round(float(ps['Low'].iloc[i-2]),dec), round(float(ps['High'].iloc[i-2]),dec)
-
-            if "ফেয়ার ভ্যালু গ্যাপ" in smc_tool:
-                b_fvg_status = "N/A"
-                b_ce = None
-                if bfvg_l and bfvg_h and bfvg_idx is not None:
