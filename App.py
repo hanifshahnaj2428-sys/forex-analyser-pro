@@ -6,205 +6,96 @@ from datetime import datetime
 import pytz
 import os
 
-st.set_page_config(page_title="BD Pro Market & Journal", page_icon="📊", layout="centered")
-
+st.set_page_config(page_title="BD Pro Market", page_icon="📊", layout="centered")
 st.title("📊 প্রো মার্কেট ও ট্রেডিং জার্নাল")
-st.caption("ফরেক্স, গোল্ড, ইথিরিয়াম অ্যানালাইসিস ও ট্রেড হিস্ট্রি")
 
 pairs = {
     "EUR/USD": "EURUSD=X",
     "GBP/USD": "GBPUSD=X",
     "USD/JPY": "USDJPY=X",
-    "AUD/USD": "AUDUSD=X",
     "GOLD (XAU/USD)": "GC=F",
     "ETHEREUM (ETH/USD)": "ETH-USD"
 }
 
-def get_bd_session():
-    bd_tz = pytz.timezone('Asia/Dhaka')
-    now_bd = datetime.now(bd_tz)
-    hour = now_bd.hour
-    time_str = now_bd.strftime("%I:%M %p (BD Time)")
-    sessions = []
-    if 6 <= hour < 15:
-        sessions.append("🌏 Asian Session")
-    if 13 <= hour < 22:
-        sessions.append("🇬🇧 London Session")
-    if 18 <= hour or hour < 3:
-        sessions.append("🇺🇸 New York Session")
-    if 18 <= hour < 22:
-        return time_str, "🔥 HIGH VOLUME: London + New York Overlap", "success"
-    elif sessions:
-        return time_str, " | ".join(sessions), "info"
-    else:
-        return time_str, "💤 অফ-সেশন (ক্রিপ্টো/ETH ২৪/৭ সচল)", "warning"
+bd_tz = pytz.timezone('Asia/Dhaka')
+now_bd = datetime.now(bd_tz)
+st.info(f"🕒 বাংলাদেশ সময়: {now_bd.strftime('%I:%M %p')}")
 
-def get_clean_data(symbol, period, interval):
-    try:
-        df = yf.download(symbol, period=period, interval=interval, progress=False)
-        if df is None or df.empty:
-            return pd.DataFrame()
-        if isinstance(df.columns, pd.MultiIndex):
-            df.columns = df.columns.get_level_values(0)
-        return df.dropna()
-    except Exception:
-        return pd.DataFrame()
+def get_data(symbol, period, interval):
+    df = yf.download(symbol, period=period, interval=interval, progress=False)
+    if isinstance(df.columns, pd.MultiIndex):
+        df.columns = df.columns.get_level_values(0)
+    return df.dropna()
 
-def check_trend(df):
-    if len(df) < 50:
-        return "ডেটা কম ⚪"
-    ema20 = df['Close'].ewm(span=20, adjust=False).mean().iloc[-1]
-    ema50 = df['Close'].ewm(span=50, adjust=False).mean().iloc[-1]
-    close = float(df['Close'].iloc[-1])
-    if close > ema20 and ema20 > ema50:
-        return "🟢 Bullish"
-    elif close < ema20 and ema20 < ema50:
-        return "🔴 Bearish"
+def get_trend(df):
+    if len(df) < 50: return "N/A"
+    e20 = df['Close'].ewm(span=20).mean().iloc[-1]
+    e50 = df['Close'].ewm(span=50).mean().iloc[-1]
+    c = float(df['Close'].iloc[-1])
+    if c > e20 > e50: return "🟢 Bullish"
+    if c < e20 < e50: return "🔴 Bearish"
     return "🟡 Ranging"
 
-def analyze_zones(df, decimals):
-    current_close = float(df['Close'].iloc[-1])
-    prev_close = float(df['Close'].iloc[-2])
-    lookback = df.iloc[-32:-2]
-    res_level = float(lookback['High'].max())
-    sup_level = float(lookback['Low'].min())
-    zone_buffer = (res_level - sup_level) * 0.05
-    res_low, res_high = res_level - zone_buffer, res_level
-    sup_low, sup_high = sup_level, sup_level + zone_buffer
-    supply_low, supply_high = None, None
-    demand_low, demand_high = None, None
-    body_sizes = (df['Close'] - df['Open']).abs()
-    avg_body = float(body_sizes.iloc[-25:-1].mean())
+def get_zones(df, dec):
+    c = float(df['Close'].iloc[-1])
+    res = float(df.iloc[-32:-2]['High'].max())
+    sup = float(df.iloc[-32:-2]['Low'].min())
+    buf = (res - sup) * 0.05
+    status = "⚪ রানিং মার্কেট"
+    if c > res: status = f"🚀 Bullish Breakout ({round(res, dec)})"
+    elif c < sup: status = f"🔻 Bearish Breakout ({round(sup, dec)})"
+    return round(c, dec), (res - buf, res), (sup, sup + buf), status
 
-    for i in range(len(df)-2, len(df)-20, -1):
-        move = float(df['Close'].iloc[i] - df['Open'].iloc[i])
-        if move > (avg_body * 1.8) and demand_low is None:
-            d_low = float(df['Low'].iloc[i-1])
-            d_high = max(float(df['Open'].iloc[i-1]), float(df['Close'].iloc[i-1]))
-            if current_close > d_high:
-                demand_low, demand_high = d_low, d_high
-        if move < -(avg_body * 1.8) and supply_low is None:
-            s_high = float(df['High'].iloc[i-1])
-            s_low = min(float(df['Open'].iloc[i-1]), float(df['Close'].iloc[i-1]))
-            if current_close < s_low:
-                supply_low, supply_high = s_low, s_high
+tab1, tab2, tab3 = st.tabs(["📊 চার্ট ও জোন", "🚀 স্ক্যানার", "📒 জার্নাল"])
 
-    breakout_status = "⚪ কোনো ব্রেকআউট/রিটেস্ট নেই"
-    is_active_signal = False
-    if current_close > res_level and prev_close <= res_level:
-        breakout_status = f"🚀 Bullish Breakout! ({round(res_level, decimals)})"
-        is_active_signal = True
-    elif current_close > res_level and abs(float(df['Low'].iloc[-1]) - res_level) <= zone_buffer * 1.5:
-        breakout_status = f"🎯 Bullish Breakout + Retest! ({round(res_level, decimals)})"
-        is_active_signal = True
-    elif current_close < sup_level and prev_close >= sup_level:
-        breakout_status = f"🔻 Bearish Breakout! ({round(sup_level, decimals)})"
-        is_active_signal = True
-    elif current_close < sup_level and abs(float(df['High'].iloc[-1]) - sup_level) <= zone_buffer * 1.5:
-        breakout_status = f"🎯 Bearish Breakout + Retest! ({round(sup_level, decimals)})"
-        is_active_signal = True
+with tab1:
+    p_name = st.selectbox("পেয়ার বেছে নিন:", list(pairs.keys()))
+    if st.button("🔍 অ্যানালাইসিস দেখুন", use_container_width=True, type="primary"):
+        tk = pairs[p_name]
+        dec = 2 if ("GC=F" in tk or "JPY" in tk or "ETH" in tk) else 5
+        df1h = get_data(tk, "1mo", "1h")
+        df1d = get_data(tk, "6mo", "1d")
+        if not df1h.empty:
+            price, res_b, sup_b, sig = get_zones(df1h, dec)
+            c1, c2, c3 = st.columns(3)
+            c1.metric("প্রাইস", price)
+            c2.metric("Daily", get_trend(df1d))
+            c3.metric("Hourly", get_trend(df1h))
+            st.success(sig)
+            plot_df = df1h.iloc[-40:]
+            fig = go.Figure(data=[go.Candlestick(x=plot_df.index, open=plot_df['Open'], high=plot_df['High'], low=plot_df['Low'], close=plot_df['Close'])])
+            fig.add_hrect(y0=res_b, y1=res_b, fillcolor="orange", opacity=0.25, annotation_text="Resistance")
+            fig.add_hrect(y0=sup_b, y1=sup_b, fillcolor="deepskyblue", opacity=0.25, annotation_text="Support")
+            fig.update_layout(xaxis_rangeslider_visible=False, height=350, template="plotly_dark", xaxis_type="category")
+            fig.update_xaxes(showticklabels=False)
+            st.plotly_chart(fig, use_container_width=True)
 
-    return {
-        "price": round(current_close, decimals),
-        "res_bounds": [res_low, res_high],
-        "sup_bounds": [sup_low, sup_high],
-        "supply_bounds": [supply_low, supply_high] if supply_low is not None else None,
-        "demand_bounds": [demand_low, demand_high] if demand_low is not None else None,
-        "res_text": f"{round(res_low, decimals)} - {round(res_high, decimals)}",
-        "sup_text": f"{round(sup_low, decimals)} - {round(sup_high, decimals)}",
-        "supply_text": f"{round(supply_low, decimals)} - {round(supply_high, decimals)}" if supply_low is not None else "ফ্রেশ জোন নেই",
-        "demand_text": f"{round(demand_low, decimals)} - {round(demand_high, decimals)}" if demand_low is not None else "ফ্রেশ জোন নেই",
-        "breakout": breakout_status,
-        "active": is_active_signal
-    }
+with tab2:
+    st.subheader("🚀 অল-পেয়ার স্ক্যানার (1H)")
+    if st.button("🔄 স্ক্যান শুরু করুন", use_container_width=True, type="primary"):
+        rows = []
+        for name, tk in pairs.items():
+            dec = 2 if ("GC=F" in tk or "JPY" in tk or "ETH" in tk) else 5
+            df = get_data(tk, "1mo", "1h")
+            if not df.empty:
+                p, _, _, sig = get_zones(df, dec)
+                rows.append({"Pair": name, "Price": p, "Trend": get_trend(df), "Signal": sig})
+        st.dataframe(pd.DataFrame(rows), use_container_width=True, hide_index=True)
 
-def draw_zone_chart(df, zones, title):
-    plot_df = df.iloc[-45:].copy()
-    fig = go.Figure(data=[go.Candlestick(
-        x=plot_df.index, open=plot_df['Open'], high=plot_df['High'],
-        low=plot_df['Low'], close=plot_df['Close'], name="Price"
-    )])
-    r_low, r_high = zones["res_bounds"]
-    s_low, s_high = zones["sup_bounds"]
-    fig.add_hrect(y0=r_low, y1=r_high, fillcolor="rgba(255, 165, 0, 0.25)", line_width=1, line_color="orange", annotation_text="Resistance", annotation_position="top left")
-    fig.add_hrect(y0=s_low, y1=s_high, fillcolor="rgba(0, 191, 255, 0.25)", line_width=1, line_color="deepskyblue", annotation_text="Support", annotation_position="bottom left")
-    if zones["supply_bounds"]:
-        sup_l, sup_h = zones["supply_bounds"]
-        fig.add_hrect(y0=sup_l, y1=sup_h, fillcolor="rgba(255, 0, 0, 0.28)", line_width=1.5, line_color="red", annotation_text="Supply (Sell)", annotation_position="top right")
-    if zones["demand_bounds"]:
-        dem_l, dem_h = zones["demand_bounds"]
-        fig.add_hrect(y0=dem_l, y1=dem_h, fillcolor="rgba(0, 200, 83, 0.28)", line_width=1.5, line_color="green", annotation_text="Demand (Buy)", annotation_position="bottom right")
-    fig.update_layout(title=title, xaxis_rangeslider_visible=False, height=380, margin=dict(l=10, r=10, t=40, b=10), template="plotly_dark", xaxis_type="category")
-    fig.update_xaxes(showticklabels=False)
-    return fig
-
-def render_chart_tab():
-    selected_pair_name = st.selectbox("অ্যানালাইসিস করার জন্য পেয়ার বেছে নিন:", list(pairs.keys()))
-    ticker = pairs[selected_pair_name]
-    if not st.button(f"🔍 {selected_pair_name} চার্ট ও জোন দেখুন", use_container_width=True, type="primary"):
-        return
-    with st.spinner("চার্ট এবং জোন তৈরি হচ্ছে..."):
-        decimals = 2 if ("GC=F" in ticker or "JPY" in ticker or "ETH" in ticker) else 5
-        df_1d = get_clean_data(ticker, "6mo", "1d")
-        df_1h = get_clean_data(ticker, "1mo", "1h")
-        df_15m = get_clean_data(ticker, "5d", "15m")
-        if df_1d.empty or df_1h.empty or df_15m.empty:
-            st.error("⚠️ মার্কেট ডেটা লোড করা সম্ভব হয়নি।")
-            return
-        zones_1h = analyze_zones(df_1h, decimals)
-        st.subheader(f"💰 বর্তমান প্রাইস: {zones_1h['price']}")
-        c1, c2, c3 = st.columns(3)
-        c1.metric("Daily (1D)", check_trend(df_1d))
-        c2.metric("Hourly (1H)", check_trend(df_1h))
-        c3.metric("15 Min (15M)", check_trend(df_15m))
-        if zones_1h["active"]:
-            st.success(f"**সিগন্যাল অ্যালার্ট (1H):** {zones_1h['breakout']}")
-        else:
-            st.info(f"**স্ট্যাটাস (1H):** {zones_1h['breakout']}")
-        st.plotly_chart(draw_zone_chart(df_1h, zones_1h, f"{selected_pair_name} - 1H Smart Zones"), use_container_width=True)
-        with st.container(border=True):
-            st.markdown("#### 📍 গুরুত্বপূর্ণ প্রাইস জোন (1H)")
-            col1, col2 = st.columns(2)
-            col1.markdown(f"**🔴 Supply (Sell Zone):**\n`{zones_1h['supply_text']}`")
-            col2.markdown(f"**🟢 Demand (Buy Zone):**\n`{zones_1h['demand_text']}`")
-            st.divider()
-            col3, col4 = st.columns(2)
-            col3.markdown(f"**🟠 Resistance:**\n`{zones_1h['res_text']}`")
-            col4.markdown(f"**🔵 Support:**\n`{zones_1h['sup_text']}`")
-
-def render_scanner_tab():
-    st.subheader("🚀 সব পেয়ারের লাইভ মার্কেট স্ক্যানার (1H)")
-    if not st.button("🔄 এখনই স্ক্যান করুন", use_container_width=True, type="primary"):
-        return
-    scan_results = []
-    progress_bar = st.progress(0)
-    items = list(pairs.items())
-    for idx, (name, ticker) in enumerate(items):
-        decimals = 2 if ("GC=F" in ticker or "JPY" in ticker or "ETH" in ticker) else 5
-        df_1h = get_clean_data(ticker, "1mo", "1h")
-        if not df_1h.empty:
-            z = analyze_zones(df_1h, decimals)
-            scan_results.append({
-                "Pair": name,
-                "Price": z["price"],
-                "Trend (1H)": check_trend(df_1h),
-                "Status / Signal": z["breakout"]
-            })
-        progress_bar.progress((idx + 1) / len(items))
-    if scan_results:
-        st.dataframe(pd.DataFrame(scan_results), use_container_width=True, hide_index=True)
-    else:
-        st.warning("⚠️ এই মুহূর্তে ডেটা পাওয়া যায়নি।")
-
-def render_journal_tab():
-    st.subheader("📒 পার্সোনাল ট্রেডিং জার্নাল")
-    journal_file = "trade_journal.csv"
-    with st.expander("➕ নতুন ট্রেড লগ করুন", expanded=True):
-        with st.form("journal_form", clear_on_submit=True):
-            c1, c2 = st.columns(2)
-            j_pair = c1.selectbox("পেয়ার", list(pairs.keys()))
-            j_type = c2.selectbox("পজিশন", ["BUY 🟢", "SELL 🔴"])
-            c3, c4 = st.columns(2)
-            j_result = c3.selectbox("ফলাফল", ["Win ✅", "Loss ❌", "Break-even ⚪"])
-            j_pnl = c4.number_input("প্রফিট / লস ($)", value=0.0, step=1.0)
-            j_note = st.text_input("ট্রেড নোট / স্ট্র্যাটেজি")
+with tab3:
+    st.subheader("📒 ট্রেডিং জার্নাল")
+    j_file = "journal.csv"
+    with st.form("j_form", clear_on_submit=True):
+        jp = st.selectbox("পেয়ার", list(pairs.keys()))
+        jt = st.selectbox("ধরন", ["BUY 🟢", "SELL 🔴"])
+        jr = st.selectbox("রেজাল্ট", ["Win ✅", "Loss ❌"])
+        jpnl = st.number_input("প্রফিট/লস ($)", value=0.0)
+        if st.form_submit_button("💾 সেভ করুন", use_container_width=True):
+            row = pd.DataFrame([{"Time": now_bd.strftime("%d-%b %I:%M%p"), "Pair": jp, "Type": jt, "Result": jr, "PnL": jpnl}])
+            df_old = pd.read_csv(j_file) if os.path.exists(j_file) else pd.DataFrame()
+            pd.concat([row, df_old], ignore_index=True).to_csv(j_file, index=False)
+            st.success("সেভ হয়েছে!")
+    if os.path.exists(j_file):
+        df_j = pd.read_csv(j_file)
+        st.metric("মোট PnL ($)", f"${df_j['PnL'].sum():.2f}")
+        st.dataframe(df_j, use_container_width=True, hide_index=True)
