@@ -103,7 +103,7 @@ with tab1:
             draw_line(fig, xl[0], xl[-1], en, "#00FFFF", f"Entry: {round(en,dec)}")
             draw_line(fig, xl[0], xl[-1], stp, "#FF4B4B", f"SL: {round(stp,dec)}", "dot")
             draw_line(fig, xl[0], xl[-1], tp, "#00FF7F", f"TP: {round(tp,dec)}")
-            st.plotly_chart(fig, use_container_width=True)
+            st.plotly_chart(fig, use_container_width=True, key="chart_tab1")
         else:
             st.warning("⚠️ ডেটা লোড হয়নি।")
 
@@ -171,4 +171,3 @@ with tab2:
             elif "BOS" in tool:
                 h_lbl = "HH" if h2 > h1 else "LH"
                 l_lbl = "HL" if l2 > l1 else "LL"
-                st.info(f"**Structure:** {h_lbl} & {l_lbl} | **High:** {round(h2, dec)} | **Low:** {round(l2, dec)}")
