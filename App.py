@@ -11,7 +11,7 @@ st.title("📈 Pro Trader")
 bd_tz = pytz.timezone('Asia/Dhaka')
 now_bd = datetime.now(bd_tz)
 hr = now_bd.hour
-ses = [s for s, cond in [("🌏 Asian", 6<=hr<15), ("🇬🇧 London", 13<=hr<22), ("🇺🇸 NY", 18<=hr or hr<3)] if cond]
+ses = [s for s, c in [("🌏 Asian", 6<=hr<15), ("🇬🇧 London", 13<=hr<22), ("🇺🇸 NY", 18<=hr or hr<3)] if c]
 with st.container(border=True):
     st.markdown(f"**🕒 সময়:** {now_bd.strftime('%I:%M %p (BD)')} | " + ("🔥 **Overlap (NY Killzone)**" if 18<=hr<22 else (" | ".join(ses) if ses else "💤 অফ-সেশন")))
 
@@ -30,92 +30,35 @@ def get_df(sym, p, iv):
             df.columns = df.columns.get_level_values(0)
         df = df[['Open', 'High', 'Low', 'Close']].dropna()
         if iv == "4h" and len(df) > 20:
-            res_df = df.resample("4h").agg({"Open":"first","High":"max","Low":"min","Close":"last"}).dropna()
-            return res_df if len(res_df) >= 15 else df
+            r = df.resample("4h").agg({"Open":"first","High":"max","Low":"min","Close":"last"}).dropna()
+            return r if len(r) >= 15 else df
         return df
     except Exception:
         return pd.DataFrame()
 
 def trend(df):
-    if len(df) < 15:
-        return "N/A"
+    if len(df) < 15: return "N/A"
     e20 = float(df['Close'].ewm(span=min(20, len(df))).mean().iloc[-1])
     e50 = float(df['Close'].ewm(span=min(50, len(df))).mean().iloc[-1])
     c = float(df['Close'].iloc[-1])
-    if c > e20 > e50:
-        return "🟢 Bullish"
-    elif c < e20 < e50:
-        return "🔴 Bearish"
-    return "🟡 Ranging"
+    return "🟢 Bullish" if c > e20 > e50 else ("🔴 Bearish" if c < e20 < e50 else "🟡 Ranging")
 
 def get_rsi(df):
-    delta = df['Close'].diff()
-    gain = (delta.where(delta > 0, 0)).rolling(window=14).mean()
-    loss = (-delta.where(delta < 0, 0)).rolling(window=14).mean()
-    rs = gain / loss.replace(0, 1e-10)
-    rsi = 100 - (100 / (1 + rs))
+    d = df['Close'].diff()
+    g = d.where(d > 0, 0).rolling(14).mean()
+    l = (-d.where(d < 0, 0)).rolling(14).mean()
+    rsi = 100 - (100 / (1 + g / l.replace(0, 1e-10)))
     return round(float(rsi.iloc[-1]), 1) if not pd.isna(rsi.iloc[-1]) else 50.0
 
-def analyze(df, dec):
-    c, pc = float(df['Close'].iloc[-1]), float(df['Close'].iloc[-2])
-    lb = min(32, len(df)-2)
-    res, sup = float(df.iloc[-lb:-2]['High'].max()), float(df.iloc[-lb:-2]['Low'].min())
-    buf = (res - sup) * 0.05
-    dl = dh = sl = sh = None
-    avg_b = float((df['Close'] - df['Open']).abs().iloc[-min(25, len(df)-1):-1].mean())
-    for i in range(len(df)-2, max(len(df)-20, 1), -1):
-        mv = float(df['Close'].iloc[i] - df['Open'].iloc[i])
-        if mv > avg_b*1.8 and not dl and c > max(df['Open'].iloc[i-1], df['Close'].iloc[i-1]):
-            dl, dh = float(df['Low'].iloc[i-1]), float(max(df['Open'].iloc[i-1], df['Close'].iloc[i-1]))
-        if mv < -avg_b*1.8 and not sl and c < min(df['Open'].iloc[i-1], df['Close'].iloc[i-1]):
-            sh, sl = float(df['High'].iloc[i-1]), float(min(df['Open'].iloc[i-1], df['Close'].iloc[i-1]))
-    sig = f"🚀 Bull Breakout ({round(res,dec)})" if c>res and pc<=res else (f"🔻 Bear Breakout ({round(sup,dec)})" if c<sup and pc>=sup else "⚪ রানিং মার্কেট")
-    tr = trend(df)
-    if "Bull" in tr or "Bull" in sig:
-        d, en, stp = "BUY 🟢", dh or (sup+buf), (dl or sup) - buf*0.5
-        tp = en + max(abs(en-stp), buf)*2
-    elif "Bear" in tr or "Bear" in sig:
-        d, en, stp = "SELL 🔴", sl or (res-buf), (sh or res) + buf*0.5
-        tp = en - max(abs(stp-en), buf)*2
-    else:
-        d, en, stp, tp = "RANGE 🟡", sup+buf, sup-buf*0.5, res-buf
-    return {
-        "p": round(c, dec),
-        "res": (res-buf, res),
-        "sup": (sup, sup+buf),
-        "dem": (dl, dh) if dl else None,
-        "sup_z": (sl, sh) if sl else None,
-        "sig": sig,
-        "dir": d,
-        "en": round(en, dec),
-        "sl": round(stp, dec),
-        "tp": round(tp, dec)
-    }
-
-def make_candlestick_fig(df_slice, h=380):
-    x_labels = [str(idx) for idx in df_slice.index]
-    fig = go.Figure(data=[go.Candlestick(
-        x=x_labels,
-        open=df_slice['Open'].tolist(),
-        high=df_slice['High'].tolist(),
-        low=df_slice['Low'].tolist(),
-        close=df_slice['Close'].tolist(),
-        name="Price"
-    )])
-    fig.update_layout(
-        xaxis_rangeslider_visible=False,
-        height=h,
-        margin=dict(l=5, r=5, t=25, b=5),
-        template="plotly_dark",
-        xaxis_type="category",
-        showlegend=False
-    )
+def make_fig(df_s, h=380):
+    xl = [str(i) for i in df_s.index]
+    fig = go.Figure(data=[go.Candlestick(x=xl, open=df_s['Open'].tolist(), high=df_s['High'].tolist(), low=df_s['Low'].tolist(), close=df_s['Close'].tolist())])
+    fig.update_layout(xaxis_rangeslider_visible=False, height=h, margin=dict(l=5, r=5, t=25, b=5), template="plotly_dark", xaxis_type="category", showlegend=False)
     fig.update_xaxes(showticklabels=False)
-    return fig, x_labels
+    return fig, xl
 
 tab1, tab2 = st.tabs(["📊 প্রাইস অ্যাকশন ও জোন", "🧠 অ্যাডভান্সড SMC অ্যানালাইসিস"])
 
-# ==================== TAB 1 ====================
 with tab1:
     c1, c2 = st.columns(2)
     pn = c1.selectbox("পেয়ার", list(pairs.keys()), key="p1")
@@ -123,97 +66,101 @@ with tab1:
     if st.button("🔍 চার্ট অ্যানালাইসিস দেখুন", use_container_width=True, type="primary", key="b1"):
         tk = pairs[pn]
         dec = 2 if tk in ["GC=F","USDJPY=X","ETH-USD"] else 5
-        with st.spinner("চার্ট লোড হচ্ছে..."):
-            df = get_df(tk, *tfs[tfl])
-            dfd = get_df(tk, "5d", "1d")
-        pdh = round(float(dfd['High'].iloc[-2]), dec) if len(dfd)>=2 else None
-        pdl = round(float(dfd['Low'].iloc[-2]), dec) if len(dfd)>=2 else None
+        df = get_df(tk, *tfs[tfl])
+        dfd = get_df(tk, "5d", "1d")
         if len(df) >= 15:
-            z = analyze(df, dec)
-            rsi_v = get_rsi(df)
+            c, pc = float(df['Close'].iloc[-1]), float(df['Close'].iloc[-2])
+            lb = min(32, len(df)-2)
+            res, sup = float(df.iloc[-lb:-2]['High'].max()), float(df.iloc[-lb:-2]['Low'].min())
+            buf = (res - sup) * 0.05
+            tr = trend(df)
+            d, en, stp = ("BUY 🟢", sup+buf, sup-buf*0.5) if "Bull" in tr else (("SELL 🔴", res-buf, res+buf*0.5) if "Bear" in tr else ("RANGE 🟡", sup+buf, sup-buf*0.5))
+            tp = en + abs(en-stp)*2 if "BUY" in d or "RANGE" in d else en - abs(stp-en)*2
+            pdh = round(float(dfd['High'].iloc[-2]), dec) if len(dfd)>=2 else None
+            pdl = round(float(dfd['Low'].iloc[-2]), dec) if len(dfd)>=2 else None
+            
             m1, m2, m3, m4 = st.columns(4)
-            m1.metric("প্রাইস", z["p"])
-            m2.metric("RSI (14)", rsi_v)
+            m1.metric("প্রাইস", round(c, dec))
+            m2.metric("RSI (14)", get_rsi(df))
             m3.metric("Prev High", pdh)
             m4.metric("Prev Low", pdl)
-            st.info(f"**ট্রেন্ড:** {trend(df)} | **স্ট্যাটাস:** {z['sig']}")
+            st.info(f"**ট্রেন্ড:** {tr}")
             t1, t2, t3 = st.columns(3)
-            t1.metric(f"Entry ({z['dir']})", z["en"])
-            t2.metric("Stop Loss", z["sl"])
-            t3.metric("Exit (TP)", z["tp"])
+            t1.metric(f"Entry ({d})", round(en, dec))
+            t2.metric("Stop Loss", round(stp, dec))
+            t3.metric("Exit (TP)", round(tp, dec))
             
-            pdf = df.iloc[-45:]
-            fig, _ = make_candlestick_fig(pdf, h=380)
-            fig.add_hrect(y0=z["res"], y1=z["res"], fillcolor="orange", opacity=0.2, annotation_text="Res")
-            fig.add_hrect(y0=z["sup"], y1=z["sup"], fillcolor="deepskyblue", opacity=0.2, annotation_text="Sup")
-            if z["dem"]:
-                fig.add_hrect(y0=z["dem"], y1=z["dem"], fillcolor="green", opacity=0.25, annotation_text="Demand")
-            if z["sup_z"]:
-                fig.add_hrect(y0=z["sup_z"], y1=z["sup_z"], fillcolor="red", opacity=0.25, annotation_text="Supply")
-            fig.add_hline(y=z["en"], line_dash="dash", line_color="cyan", annotation_text="Entry")
-            fig.add_hline(y=z["sl"], line_dash="dot", line_color="red", annotation_text="SL")
-            fig.add_hline(y=z["tp"], line_dash="dash", line_color="lime", annotation_text="Exit")
-            if pdh:
-                fig.add_hline(y=pdh, line_dash="dashdot", line_color="gold", annotation_text="PDH")
-            if pdl:
-                fig.add_hline(y=pdl, line_dash="dashdot", line_color="violet", annotation_text="PDL")
+            fig, _ = make_fig(df.iloc[-45:], 380)
+            fig.add_hrect(y0=res-buf, y1=res, fillcolor="orange", opacity=0.2, annotation_text="Res")
+            fig.add_hrect(y0=sup, y1=sup+buf, fillcolor="deepskyblue", opacity=0.2, annotation_text="Sup")
+            fig.add_hline(y=en, line_dash="dash", line_color="cyan", annotation_text="Entry")
+            fig.add_hline(y=stp, line_dash="dot", line_color="red", annotation_text="SL")
+            fig.add_hline(y=tp, line_dash="dash", line_color="lime", annotation_text="TP")
+            if pdh: fig.add_hline(y=pdh, line_dash="dashdot", line_color="gold", annotation_text="PDH")
+            if pdl: fig.add_hline(y=pdl, line_dash="dashdot", line_color="violet", annotation_text="PDL")
             st.plotly_chart(fig, use_container_width=True)
         else:
-            st.warning("⚠️ এই মুহূর্তে সার্ভার থেকে ডেটা পাওয়া যাচ্ছে না।")
+            st.warning("⚠️ ডেটা লোড হয়নি।")
 
-# ==================== TAB 2: ADVANCED VISUAL SMC ====================
 with tab2:
     s1, s2 = st.columns(2)
     sp = s1.selectbox("পেয়ার", list(pairs.keys()), key="p2")
     stf = s2.selectbox("টাইমফ্রেম", list(tfs.keys()), index=2, key="tf2")
+    tool = st.selectbox("SMC উপাদান:", ["১. ফেয়ার ভ্যালু গ্যাপ (FVG)", "২. অর্ডার ব্লক (OB)", "৩. মার্কেট স্ট্রাকচার (BOS/CHoCH)", "৪. প্রিমিয়াম/ডিসকাউন্ট ও OTE", "৫. লিকুইডিটি (BSL/SSL)"], key="tool")
     
-    smc_tool = st.selectbox(
-        "SMC উপাদান নির্বাচন করুন:",
-        [
-            "১. ফেয়ার ভ্যালু গ্যাপ (Fair Value Gap & 50% CE)",
-            "২. অর্ডার ব্লক (Institutional Order Blocks)",
-            "৩. মার্কেট স্ট্রাকচার (BOS ও CHoCH)",
-            "৪. প্রিমিয়াম, ডিসকাউন্ট ও OTE জোন",
-            "৫. লিকুইডিটি পুল (BSL ও SSL Sweep)"
-        ],
-        key="smc_tool"
-    )
-    
-    run_smc = st.button("⚡ চার্ট ও SMC অ্যানালাইসিস দেখুন", use_container_width=True, type="primary", key="b2")
-    
-    if run_smc:
+    if st.button("⚡ চার্ট ও SMC অ্যানালাইসিস দেখুন", use_container_width=True, type="primary", key="b2"):
         tk = pairs[sp]
         dec = 2 if tk in ["GC=F","USDJPY=X","ETH-USD"] else 5
-        with st.spinner("SMC চার্ট ও জোন তৈরি হচ্ছে..."):
-            dfs = get_df(tk, *tfs[stf])
-        
+        dfs = get_df(tk, *tfs[stf])
         if len(dfs) >= 15:
             ps = dfs.iloc[-45:].copy()
-            fig, x_labels = make_candlestick_fig(ps, h=390)
+            fig, xl = make_fig(ps, 390)
             c = float(ps['Close'].iloc[-1])
             mid = max(2, len(ps) // 2)
-            
-            h1_pos = int(ps.iloc[:mid]['High'].values.argmax())
-            h2_pos = mid + int(ps.iloc[mid:]['High'].values.argmax())
-            l1_pos = int(ps.iloc[:mid]['Low'].values.argmin())
-            l2_pos = mid + int(ps.iloc[mid:]['Low'].values.argmin())
-            
-            h1, h2 = float(ps['High'].iloc[h1_pos]), float(ps['High'].iloc[h2_pos])
-            l1, l2 = float(ps['Low'].iloc[l1_pos]), float(ps['Low'].iloc[l2_pos])
-            
-            h_lbl = "HH" if h2 > h1 else "LH"
-            l_lbl = "HL" if l2 > l1 else "LL"
+            h1_p, h2_p = int(ps.iloc[:mid]['High'].values.argmax()), mid + int(ps.iloc[mid:]['High'].values.argmax())
+            l1_p, l2_p = int(ps.iloc[:mid]['Low'].values.argmin()), mid + int(ps.iloc[mid:]['Low'].values.argmin())
+            h1, h2 = float(ps['High'].iloc[h1_p]), float(ps['High'].iloc[h2_p])
+            l1, l2 = float(ps['Low'].iloc[l1_p]), float(ps['Low'].iloc[l2_p])
             sw_hi, sw_lo = max(h1, h2), min(l1, l2)
-            rng = max(sw_hi - sw_lo, 1e-6)
-            eq = (sw_hi + sw_lo) / 2
+            rng, eq = max(sw_hi - sw_lo, 1e-6), (sw_hi + sw_lo) / 2
             
-            bfvg_l = bfvg_h = sfvg_l = sfvg_h = None
-            bfvg_idx = sfvg_idx = None
-            bob_l = bob_h = sob_l = sob_h = None
-            
+            bf_l = bf_h = sf_l = sf_h = bob_l = bob_h = sob_l = sob_h = None
             for i in range(len(ps)-1, 1, -1):
-                if float(ps['Low'].iloc[i]) > float(ps['High'].iloc[i-2]) and bfvg_l is None:
-                    bfvg_l, bfvg_h = round(float(ps['High'].iloc[i-2]), dec), round(float(ps['Low'].iloc[i]), dec)
-                    bfvg_idx = i
+                if float(ps['Low'].iloc[i]) > float(ps['High'].iloc[i-2]) and bf_l is None:
+                    bf_l, bf_h = round(float(ps['High'].iloc[i-2]), dec), round(float(ps['Low'].iloc[i]), dec)
                     bob_l, bob_h = round(float(ps['Low'].iloc[i-2]), dec), round(float(ps['High'].iloc[i-2]), dec)
-                if float(ps['High'].iloc[i]) < float(ps['Low'].iloc[i-2]) and sfvg_l is None:
+                if float(ps['High'].iloc[i]) < float(ps['Low'].iloc[i-2]) and sf_l is None:
+                    sf_l, sf_h = round(float(ps['High'].iloc[i]), dec), round(float(ps['Low'].iloc[i-2]), dec)
+                    sob_l, sob_h = round(float(ps['Low'].iloc[i-2]), dec), round(float(ps['High'].iloc[i-2]), dec)
+
+            if "FVG" in tool:
+                f1, f2 = st.columns(2)
+                f1.metric("Bullish FVG", f"{bf_l} - {bf_h}" if bf_l else "N/A")
+                f2.metric("Bearish FVG", f"{sf_l} - {sf_h}" if sf_l else "N/A")
+                if bf_l:
+                    fig.add_hrect(y0=bf_l, y1=bf_h, fillcolor="lime", opacity=0.22, annotation_text="Bull FVG")
+                    fig.add_hline(y=round((bf_l+bf_h)/2, dec), line_dash="dot", line_color="lime", annotation_text="50% CE")
+                if sf_l:
+                    fig.add_hrect(y0=sf_l, y1=sf_h, fillcolor="red", opacity=0.22, annotation_text="Bear FVG")
+                    fig.add_hline(y=round((sf_l+sf_h)/2, dec), line_dash="dot", line_color="red", annotation_text="50% CE")
+            elif "OB" in tool:
+                o1, o2 = st.columns(2)
+                o1.metric("Bullish OB", f"{bob_l} - {bob_h}" if bob_l else "N/A")
+                o2.metric("Bearish OB", f"{sob_l} - {sob_h}" if sob_l else "N/A")
+                if bob_l: fig.add_hrect(y0=bob_l, y1=bob_h, fillcolor="cyan", opacity=0.25, annotation_text="Bull OB")
+                if sob_l: fig.add_hrect(y0=sob_l, y1=sob_h, fillcolor="magenta", opacity=0.25, annotation_text="Bear OB")
+            elif "BOS" in tool:
+                st.info(f"High: **{round(h2, dec)}** | Low: **{round(l2, dec)}**")
+                fig.add_trace(go.Scatter(x=[xl[h1_p], xl[h2_p]], y=[h1, h2], mode="markers+lines", line=dict(color="orange", dash="dot")))
+                fig.add_trace(go.Scatter(x=[xl[l1_p], xl[l2_p]], y=[l1, l2], mode="markers+lines", line=dict(color="cyan", dash="dot")))
+                fig.add_hline(y=h2, line_dash="dash", line_color="orange", annotation_text="Swing High")
+                fig.add_hline(y=l2, line_dash="dash", line_color="cyan", annotation_text="Swing Low")
+            elif "OTE" in tool:
+                st.info("🔴 **Premium Zone (উপরে)** | 🟢 **Discount Zone (নিচে)**")
+                fig.add_hrect(y0=eq, y1=sw_hi, fillcolor="red", opacity=0.12, annotation_text="PREMIUM")
+                fig.add_hrect(y0=sw_lo, y1=eq, fillcolor="green", opacity=0.12, annotation_text="DISCOUNT")
+                fig.add_hline(y=eq, line_dash="dash", line_color="white", annotation_text="EQ 50%")
+                ote_l, ote_h = (sw_lo + rng*0.618, sw_lo + rng*0.786) if c > eq else (sw_hi - rng*0.786, sw_hi - rng*0.618)
+                fig.add_hrect(y0=ote_l, y1=ote_h, fillcolor="gold", opacity=0.25, annotation_text="OTE Zone")
+            elif "BSL" in tool:
+                st.warning(f"BSL: **{round(sw_hi, dec)}** | SSL: **{round(sw_lo, dec)}**")
