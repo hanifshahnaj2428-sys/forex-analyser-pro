@@ -15,6 +15,9 @@ ses = [s for s, c in [("🌏 Asian", 6<=hr<15), ("🇬🇧 London", 13<=hr<22), 
 with st.container(border=True):
     st.markdown(f"**🕒 সময়:** {now_bd.strftime('%I:%M %p (BD)')} | " + ("🔥 **Overlap (NY Killzone)**" if 18<=hr<22 else (" | ".join(ses) if ses else "💤 অফ-সেশন")))
 
+mode = st.radio("মোড নির্বাচন করুন:", ["📊 প্রাইস অ্যাকশন ও জোন", "🧠 অ্যাডভান্সড SMC অ্যানালাইসিস"], horizontal=True, label_visibility="collapsed")
+st.divider()
+
 pairs = {"EUR/USD": "EURUSD=X", "GBP/USD": "GBPUSD=X", "USD/JPY": "USDJPY=X", "AUD/USD": "AUDUSD=X", "GOLD": "GC=F", "ETH": "ETH-USD"}
 tfs = {"5M": ("5d", "5m"), "15M": ("5d", "15m"), "1H": ("1mo", "1h"), "4H": ("2mo", "4h")}
 
@@ -51,27 +54,27 @@ def get_rsi(df):
     rsi = 100 - (100 / (1 + g / l.replace(0, 1e-10)))
     return round(float(rsi.iloc[-1]), 1) if not pd.isna(rsi.iloc[-1]) else 50.0
 
-def make_fig(df_s, h=400):
-    xl = [str(i) for i in df_s.index]
+def make_fig(df_s, h=420):
+    x_idx = list(range(len(df_s)))
     fig = go.Figure(data=[go.Candlestick(
-        x=xl,
+        x=x_idx,
         open=df_s['Open'].tolist(),
         high=df_s['High'].tolist(),
         low=df_s['Low'].tolist(),
         close=df_s['Close'].tolist(),
+        increasing_line_color='#00E676',
+        decreasing_line_color='#FF5252',
         name="Price"
     )])
     fig.update_layout(
         xaxis_rangeslider_visible=False,
         height=h,
-        autosize=True,
-        margin=dict(l=10, r=10, t=30, b=10),
+        margin=dict(l=5, r=5, t=30, b=5),
         template="plotly_dark",
-        xaxis_type="category",
         showlegend=False
     )
     fig.update_xaxes(showticklabels=False)
-    return fig, xl
+    return fig, len(df_s) - 1
 
 def draw_box(fig, x0, x1, y0, y1, rgba, bcol, lbl):
     fig.add_trace(go.Scatter(
@@ -85,7 +88,7 @@ def draw_box(fig, x0, x1, y0, y1, rgba, bcol, lbl):
     ))
     fig.add_annotation(
         x=x1,
-        y=(y0+y1)/2,
+        y=(y0 + y1) / 2,
         text=f"<b>{lbl}</b>",
         showarrow=False,
         xanchor="right",
@@ -111,9 +114,8 @@ def draw_line(fig, x0, x1, yv, col, lbl, dsh="dash"):
         font=dict(color=col, size=11)
     )
 
-tab1, tab2 = st.tabs(["📊 প্রাইস অ্যাকশন ও জোন", "🧠 অ্যাডভান্সড SMC অ্যানালাইসিস"])
-
-with tab1:
+# ==================== মোড ১: প্রাইস অ্যাকশন ====================
+if mode == "📊 প্রাইস অ্যাকশন ও জোন":
     c1, c2 = st.columns(2)
     pn = c1.selectbox("পেয়ার", list(pairs.keys()), key="p1")
     tfl = c2.selectbox("টাইমফ্রেম", list(tfs.keys()), index=2, key="tf1")
@@ -132,6 +134,7 @@ with tab1:
             tp = en + abs(en-stp)*2 if "BUY" in d or "RANGE" in d else en - abs(stp-en)*2
             pdh = round(float(dfd['High'].iloc[-2]), dec) if len(dfd)>=2 else None
             pdl = round(float(dfd['Low'].iloc[-2]), dec) if len(dfd)>=2 else None
+            
             m1, m2, m3, m4 = st.columns(4)
             m1.metric("প্রাইস", round(c, dec))
             m2.metric("RSI (14)", get_rsi(df))
@@ -142,73 +145,88 @@ with tab1:
             t1.metric(f"Entry ({d})", round(en, dec))
             t2.metric("Stop Loss", round(stp, dec))
             t3.metric("Exit (TP)", round(tp, dec))
-            fig, xl = make_fig(df.iloc[-45:], 380)
-            draw_box(fig, xl, xl[-1], res-buf, res, "rgba(255,165,0,0.22)", "#FFA500", "Resistance")
-            draw_box(fig, xl, xl[-1], sup, sup+buf, "rgba(0,191,255,0.22)", "#00BFFF", "Support")
-            draw_line(fig, xl, xl[-1], en, "#00FFFF", f"Entry: {round(en,dec)}")
-            draw_line(fig, xl, xl[-1], stp, "#FF4B4B", f"SL: {round(stp,dec)}", "dot")
-            draw_line(fig, xl, xl[-1], tp, "#00FF7F", f"TP: {round(tp,dec)}")
-            st.plotly_chart(fig, use_container_width=True, key="chart_tab1")
+            
+            fig, end_x = make_fig(df.iloc[-45:], 400)
+            draw_box(fig, 0, end_x, res-buf, res, "rgba(255,165,0,0.22)", "#FFA500", "Resistance")
+            draw_box(fig, 0, end_x, sup, sup+buf, "rgba(0,191,255,0.22)", "#00BFFF", "Support")
+            draw_line(fig, 0, end_x, en, "#00FFFF", f"Entry: {round(en,dec)}")
+            draw_line(fig, 0, end_x, stp, "#FF4B4B", f"SL: {round(stp,dec)}", "dot")
+            draw_line(fig, 0, end_x, tp, "#00FF7F", f"TP: {round(tp,dec)}")
+            st.plotly_chart(fig, use_container_width=True)
         else:
             st.warning("⚠️ ডেটা লোড হয়নি।")
 
-with tab2:
-    if "smc_on" not in st.session_state:
-        st.session_state.smc_on = False
+# ==================== মোড ২: অ্যাডভান্সড SMC অ্যানালাইসিস ====================
+else:
     s1, s2 = st.columns(2)
     sp = s1.selectbox("পেয়ার", list(pairs.keys()), key="p2")
     stf = s2.selectbox("টাইমফ্রেম", list(tfs.keys()), index=2, key="tf2")
-    tool = st.selectbox("SMC উপাদান নির্বাচন করুন:", ["১. ফেয়ার ভ্যালু গ্যাপ (FVG)", "২. অর্ডার ব্লক (OB)", "৩. মার্কেট স্ট্রাকচার (BOS/CHoCH)", "৪. প্রিমিয়াম/ডিসকাউন্ট ও OTE", "৫. লিকুইডিটি (BSL/SSL)"], key="tool")
-    if st.button("⚡ চার্ট ও SMC অ্যানালাইসিস দেখুন", use_container_width=True, type="primary", key="b2"):
-        st.session_state.smc_on = True
-    if st.session_state.smc_on:
-        tk = pairs[sp]
-        dec = 2 if tk in ["GC=F","USDJPY=X","ETH-USD"] else 5
-        dfs = get_df(tk, *tfs[stf])
-        if len(dfs) >= 15:
-            ps = dfs.iloc[-45:].copy()
-            fig, xl = make_fig(ps, 410)
-            c = float(ps['Close'].iloc[-1])
-            mid = max(2, len(ps) // 2)
-            h1_p = int(ps.iloc[:mid]['High'].values.argmax())
-            h2_p = mid + int(ps.iloc[mid:]['High'].values.argmax())
-            l1_p = int(ps.iloc[:mid]['Low'].values.argmin())
-            l2_p = mid + int(ps.iloc[mid:]['Low'].values.argmin())
-            h1, h2 = float(ps['High'].iloc[h1_p]), float(ps['High'].iloc[h2_p])
-            l1, l2 = float(ps['Low'].iloc[l1_p]), float(ps['Low'].iloc[l2_p])
-            sw_hi, sw_lo = max(h1, h2), min(l1, l2)
-            rng, eq = max(sw_hi - sw_lo, 1e-6), (sw_hi + sw_lo) / 2
-            bf_l = bf_h = sf_l = sf_h = None
-            bf_idx = sf_idx = 0
-            bob_l = bob_h = sob_l = sob_h = None
-            bob_idx = sob_idx = 0
-            for i in range(len(ps)-1, 1, -1):
-                if float(ps['Low'].iloc[i]) > float(ps['High'].iloc[i-2]) and bf_l is None:
-                    bf_l, bf_h = round(float(ps['High'].iloc[i-2]), dec), round(float(ps['Low'].iloc[i]), dec)
-                    bf_idx = i - 2
-                    bob_l, bob_h = round(float(ps['Low'].iloc[i-2]), dec), round(float(ps['High'].iloc[i-2]), dec)
-                    bob_idx = i - 2
-                if float(ps['High'].iloc[i]) < float(ps['Low'].iloc[i-2]) and sf_l is None:
-                    sf_l, sf_h = round(float(ps['High'].iloc[i]), dec), round(float(ps['Low'].iloc[i-2]), dec)
-                    sf_idx = i - 2
-                    sob_l, sob_h = round(float(ps['Low'].iloc[i-2]), dec), round(float(ps['High'].iloc[i-2]), dec)
-                    sob_idx = i - 2
-            if bob_l is None:
-                bob_l, bob_h, bob_idx = round(float(ps['Low'].iloc[l2_p]), dec), round(max(float(ps['Open'].iloc[l2_p]), float(ps['Close'].iloc[l2_p])), dec), l2_p
-            if sob_l is None:
-                sob_h, sob_l, sob_idx = round(float(ps['High'].iloc[h2_p]), dec), round(min(float(ps['Open'].iloc[h2_p]), float(ps['Close'].iloc[h2_p])), dec), h2_p
-            if "FVG" in tool:
-                f1, f2 = st.columns(2)
-                f1.metric("Bullish FVG", f"{bf_l} - {bf_h}" if bf_l else "গ্যাপ নেই")
-                f2.metric("Bearish FVG", f"{sf_l} - {sf_h}" if sf_l else "গ্যাপ নেই")
-                if bf_l is not None:
-                    draw_box(fig, xl[bf_idx], xl[-1], bf_l, bf_h, "rgba(0,255,127,0.28)", "#00C853", "Bullish FVG")
-                    draw_line(fig, xl[bf_idx], xl[-1], round((bf_l+bf_h)/2, dec), "#00FF7F", "50% CE", "dot")
-                if sf_l is not None:
-                    draw_box(fig, xl[sf_idx], xl[-1], sf_l, sf_h, "rgba(255,75,75,0.28)", "#FF1744", "Bearish FVG")
-                    draw_line(fig, xl[sf_idx], xl[-1], round((sf_l+sf_h)/2, dec), "#FF5252", "50% CE", "dot")
-            elif "OB" in tool:
-                o1, o2 = st.columns(2)
-                o1.metric("Bullish OB", f"{bob_l} - {bob_h}")
-                o2.metric("Bearish OB", f"{sob_l} - {sob_h}")
-                draw_box(fig, xl[bob_idx], xl[-1], bob_l, bob_h, "rgba(0,229,255,0.30)", "#00B8D4", "Bullish OB")
+    tool = st.selectbox("SMC উপাদান নির্বাচন করুন:", [
+        "১. ফেয়ার ভ্যালু গ্যাপ (FVG & 50% CE)",
+        "২. অর্ডার ব্লক (Order Block)",
+        "৩. মার্কেট স্ট্রাকচার (BOS / CHoCH)",
+        "৪. প্রিমিয়াম / ডিসকাউন্ট ও OTE",
+        "৫. লিকুইডিটি পুল (BSL / SSL)"
+    ], key="tool")
+    
+    tk = pairs[sp]
+    dec = 2 if tk in ["GC=F","USDJPY=X","ETH-USD"] else 5
+    dfs = get_df(tk, *tfs[stf])
+    
+    if len(dfs) >= 15:
+        ps = dfs.iloc[-45:].copy().reset_index(drop=True)
+        fig, end_x = make_fig(ps, 420)
+        c = float(ps['Close'].iloc[-1])
+        mid = max(2, len(ps) // 2)
+        
+        h1_p = int(ps.iloc[:mid]['High'].values.argmax())
+        h2_p = mid + int(ps.iloc[mid:]['High'].values.argmax())
+        l1_p = int(ps.iloc[:mid]['Low'].values.argmin())
+        l2_p = mid + int(ps.iloc[mid:]['Low'].values.argmin())
+        
+        h1, h2 = float(ps['High'].iloc[h1_p]), float(ps['High'].iloc[h2_p])
+        l1, l2 = float(ps['Low'].iloc[l1_p]), float(ps['Low'].iloc[l2_p])
+        sw_hi, sw_lo = max(h1, h2), min(l1, l2)
+        rng, eq = max(sw_hi - sw_lo, 1e-6), (sw_hi + sw_lo) / 2
+        
+        # ১. আসল FVG (৩-ক্যান্ডেল গ্যাপ) খোঁজা
+        bf_l = bf_h = sf_l = sf_h = None
+        bf_idx = sf_idx = 0
+        for i in range(len(ps)-1, 1, -1):
+            if float(ps['Low'].iloc[i]) > float(ps['High'].iloc[i-2]) and bf_l is None:
+                bf_l, bf_h = round(float(ps['High'].iloc[i-2]), dec), round(float(ps['Low'].iloc[i]), dec)
+                bf_idx = i - 2
+            if float(ps['High'].iloc[i]) < float(ps['Low'].iloc[i-2]) and sf_l is None:
+                sf_l, sf_h = round(float(ps['High'].iloc[i]), dec), round(float(ps['Low'].iloc[i-2]), dec)
+                sf_idx = i - 2
+                
+        # ২. আসল Order Block (বড় মুভের আগের বিপরীত ক্যান্ডেল) খোঁজা
+        bob_l = bob_h = sob_l = sob_h = None
+        bob_idx = sob_idx = 0
+        body = (ps['Close'] - ps['Open']).abs()
+        avg_body = float(body.mean())
+        for i in range(len(ps)-1, 1, -1):
+            mv = float(ps['Close'].iloc[i] - ps['Open'].iloc[i])
+            if mv > avg_body * 1.5 and bob_l is None:
+                bob_l = round(float(ps['Low'].iloc[i-1]), dec)
+                bob_h = round(max(float(ps['Open'].iloc[i-1]), float(ps['Close'].iloc[i-1])), dec)
+                bob_idx = i - 1
+            if mv < -avg_body * 1.5 and sob_l is None:
+                sob_h = round(float(ps['High'].iloc[i-1]), dec)
+                sob_l = round(min(float(ps['Open'].iloc[i-1]), float(ps['Close'].iloc[i-1])), dec)
+                sob_idx = i - 1
+                
+        if bob_l is None:
+            bob_l, bob_h, bob_idx = round(l2, dec), round(l2 + rng*0.08, dec), l2_p
+        if sob_l is None:
+            sob_h, sob_l, sob_idx = round(h2, dec), round(h2 - rng*0.08, dec), h2_p
+
+        if "FVG" in tool:
+            f1, f2 = st.columns(2)
+            f1.metric("Bullish FVG (Buy Gap)", f"{bf_l} - {bf_h}" if bf_l else "গ্যাপ নেই")
+            f2.metric("Bearish FVG (Sell Gap)", f"{sf_l} - {sf_h}" if sf_l else "গ্যাপ নেই")
+            if bf_l is not None:
+                draw_box(fig, bf_idx, end_x, bf_l, bf_h, "rgba(0,255,127,0.30)", "#00C853", "Bullish FVG")
+                draw_line(fig, bf_idx, end_x, round((bf_l+bf_h)/2, dec), "#00FF7F", "50% CE", "dot")
+            if sf_l is not None:
+                draw_box(fig, sf_idx, end_x, sf_l, sf_h, "rgba(255,75,75,0.30)", "#FF1744", "Bearish FVG")
