@@ -7,20 +7,14 @@ from datetime import datetime
 import pytz
 import time
 
-# এক-লাইনের ক্লিন SVG লোগো (যাতে Markdown না ভাঙে)
-logo_svg = '<svg xmlns="http://w3.org" viewBox="0 0 100 100" width="44" height="44"><rect width="100" height="100" rx="22" fill="#0F172A"/><path d="M18 75 L42 52 L60 62 L84 26" stroke="#38BDF8" stroke-width="5" fill="none" stroke-linecap="round" stroke-linejoin="round"/><line x1="28" y1="35" x2="28" y2="82" stroke="#EF4444" stroke-width="4" stroke-linecap="round"/><rect x="22" y="45" width="12" height="24" rx="2" fill="#EF4444"/><line x1="50" y1="25" x2="50" y2="75" stroke="#10B981" stroke-width="4" stroke-linecap="round"/><rect x="44" y="34" width="12" height="28" rx="2" fill="#10B981"/><line x1="72" y1="15" x2="72" y2="62" stroke="#10B981" stroke-width="4" stroke-linecap="round"/><rect x="66" y="22" width="12" height="26" rx="2" fill="#10B981"/></svg>'
-
 st.set_page_config(
     page_title="Pro Trader",
     page_icon="📈",
     layout="centered"
 )
 
-# ইনডেন্টেশন ছাড়া ক্লিন হেডার
-st.markdown(
-    f'<div style="display:flex;align-items:center;gap:12px;margin-bottom:12px;">{logo_svg}<div><h1 style="margin:0;padding:0;font-size:1.85rem;font-weight:800;line-height:1.2;">Pro Trader</h1><p style="margin:0;padding:0;font-size:0.85rem;color:#94A3B8;">Advanced Market & SMC Intelligence</p></div></div>',
-    unsafe_allow_html=True
-)
+st.title("📈 Pro Trader")
+st.caption("Advanced Market & SMC Intelligence")
 
 # বাংলাদেশ সময়, সেশন ও ICT Killzone ডিটেক্টর
 bd_tz = pytz.timezone('Asia/Dhaka')
@@ -32,6 +26,15 @@ kz = "⚡ London Killzone" if 13<=hr<16 else ("🔥 NY Killzone (Best for SMC)" 
 
 with st.container(border=True):
     st.markdown(f"**🕒 সময়:** {now_bd.strftime('%I:%M %p (BD)')} | **সেশন:** {(' | '.join(ses) if ses else '💤 অফ-সেশন')} | **{kz}**")
+
+# নেভিগেশন মেনু (st.tabs এর বদলে স্থিতিশীল মেনু)
+page = st.radio(
+    "সেকশন নির্বাচন করুন:",
+    ["📊 চার্ট ও RSI", "🧠 SMC অ্যানালাইসিস", "🧭 MTF ও সেশন লিকুইডিটি"],
+    horizontal=True,
+    label_visibility="collapsed"
+)
+st.divider()
 
 pairs = {"EUR/USD": "EURUSD=X", "GBP/USD": "GBPUSD=X", "USD/JPY": "USDJPY=X", "AUD/USD": "AUDUSD=X", "GOLD": "GC=F", "ETH": "ETH-USD"}
 tfs = {"5M": ("2d", "5m"), "15M": ("5d", "15m"), "1H": ("1mo", "1h"), "4H": ("2mo", "4h")}
@@ -120,12 +123,13 @@ def analyze(df, dec):
         
     return {"p":round(c,dec), "res":(res-buf,res), "sup":(sup,sup+buf), "dem":(dl,dh) if dl else None, "sup_z":(sl,sh) if sl else None, "sig":sig, "dir":d, "en":round(en,dec), "sl":round(stp,dec), "tp":round(tp,dec), "atr":round(atr,dec)}
 
-tab1, tab2, tab3 = st.tabs(["📊 চার্ট ও RSI", "🧠 SMC অ্যানালাইসিস", "🧭 MTF ও সেশন লিকুইডিটি"])
-
-with tab1:
+# ==================== পেজ ১: চার্ট ও RSI ====================
+if page == "📊 চার্ট ও RSI":
     c1, c2 = st.columns(2)
-    pn, tfl = c1.selectbox("পেয়ার", list(pairs.keys()), key="t1_p"), c2.selectbox("টাইমফ্রেম", list(tfs.keys()), index=2, key="t1_tf")
-    if st.button("🔍 অ্যানালাইসিস দেখুন", use_container_width=True, type="primary", key="btn_t1"):
+    pn = c1.selectbox("পেয়ার", list(pairs.keys()), key="t1_p")
+    tfl = c2.selectbox("টাইমফ্রেম", list(tfs.keys()), index=2, key="t1_tf")
+    
+    if st.button("🔍 অ্যানালাইসিস দেখুন", use_container_width=True, type="primary"):
         tk = pairs[pn]
         dec = 2 if tk in ["GC=F","USDJPY=X","ETH-USD"] else 5
         with st.spinner("ডেটা লোড হচ্ছে..."):
@@ -182,3 +186,17 @@ with tab1:
             if z["sup_z"]: fig.add_hrect(y0=z["sup_z"], y1=z["sup_z"], fillcolor="red", opacity=0.25, annotation_text="Supply", row=1, col=1)
             
             fig.add_hline(y=z["en"], line_dash="dash", line_color="cyan", annotation_text="Entry", row=1, col=1)
+            fig.add_hline(y=z["sl"], line_dash="dot", line_color="red", annotation_text="SL", row=1, col=1)
+            fig.add_hline(y=z["tp"], line_dash="dash", line_color="lime", annotation_text="TP", row=1, col=1)
+            
+            fig.add_trace(go.Scatter(x=pdf.index, y=pdf['RSI'], line=dict(color='violet', width=1.5), name='RSI'), row=2, col=1)
+            fig.add_hline(y=70, line_dash="dot", line_color="red", row=2, col=1)
+            fig.add_hline(y=30, line_dash="dot", line_color="lime", row=2, col=1)
+            
+            fig.update_layout(xaxis_rangeslider_visible=False, height=480, margin=dict(l=5,r=5,t=20,b=5), template="plotly_dark", showlegend=False)
+            fig.update_xaxes(type="category", showticklabels=False)
+            st.plotly_chart(fig, use_container_width=True)
+        else:
+            st.warning("⚠️ পর্যাপ্ত ডেটা পাওয়া যায়নি। পেজ রিফ্রেশ করে বা অন্য টাইমফ্রেম সিলেক্ট করে আবার চেষ্টা করুন।")
+
+# ==================== পেজ ২: SMC অ্যানালাইসিস ====================
