@@ -5,9 +5,38 @@ import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 from datetime import datetime
 import pytz
+import time
 
-st.set_page_config(page_title="BD Pro Market & SMC v4", page_icon="📊", layout="centered")
-st.title("📊 প্রো মার্কেট ও SMC অ্যানালাইসিস v4.0")
+# কাস্টম ট্রেডিং ক্যান্ডেলস্টিক লোগো (SVG)
+trading_logo_svg = """
+<svg xmlns="http://w3.org" viewBox="0 0 100 100" width="42" height="42">
+  <rect width="100" height="100" rx="22" fill="#0F172A"/>
+  <path d="M18 75 L42 52 L60 62 L84 26" stroke="#38BDF8" stroke-width="5" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+  <line x1="28" y1="35" x2="28" y2="82" stroke="#EF4444" stroke-width="4" stroke-linecap="round"/>
+  <rect x="22" y="45" width="12" height="24" rx="2" fill="#EF4444"/>
+  <line x1="50" y1="25" x2="50" y2="75" stroke="#10B981" stroke-width="4" stroke-linecap="round"/>
+  <rect x="44" y="34" width="12" height="28" rx="2" fill="#10B981"/>
+  <line x1="72" y1="15" x2="72" y2="62" stroke="#10B981" stroke-width="4" stroke-linecap="round"/>
+  <rect x="66" y="22" width="12" height="26" rx="2" fill="#10B981"/>
+</svg>
+"""
+
+st.set_page_config(
+    page_title="Pro Trader",
+    page_icon=trading_logo_svg,
+    layout="centered"
+)
+
+# কাস্টম লোগো ও টাইটেল হেডার
+st.markdown(f"""
+<div style="display: flex; align-items: center; gap: 12px; margin-bottom: 10px;">
+    {trading_logo_svg}
+    <div>
+        <h1 style="margin: 0; padding: 0; font-size: 1.9rem; font-weight: 800; letter-spacing: 0.5px;">Pro Trader</h1>
+        <p style="margin: 0; padding: 0; font-size: 0.85rem; color: #94A3B8;">Advanced Market & SMC Intelligence</p>
+    </div>
+</div>
+""", unsafe_allow_html=True)
 
 # বাংলাদেশ সময়, সেশন ও ICT Killzone ডিটেক্টর
 bd_tz = pytz.timezone('Asia/Dhaka')
@@ -21,16 +50,23 @@ with st.container(border=True):
     st.markdown(f"**🕒 সময়:** {now_bd.strftime('%I:%M %p (BD)')} | **সেশন:** {(' | '.join(ses) if ses else '💤 অফ-সেশন')} | **{kz}**")
 
 pairs = {"EUR/USD": "EURUSD=X", "GBP/USD": "GBPUSD=X", "USD/JPY": "USDJPY=X", "AUD/USD": "AUDUSD=X", "GOLD": "GC=F", "ETH": "ETH-USD"}
-tfs = {"5M": ("5d", "5m"), "15M": ("5d", "15m"), "1H": ("1mo", "1h"), "4H": ("2mo", "4h")}
+tfs = {"5M": ("2d", "5m"), "15M": ("5d", "15m"), "1H": ("1mo", "1h"), "4H": ("2mo", "4h")}
 htf_map = {"5M": ("1mo", "1h"), "15M": ("1mo", "1h"), "1H": ("2mo", "4h"), "4H": ("6mo", "1d")}
 
-@st.cache_data(ttl=60)
+@st.cache_data(ttl=120)
 def get_df(sym, p, iv):
-    df = yf.download(sym, period=p, interval="1h" if iv=="4h" else iv, progress=False)
-    if df is None or df.empty: return pd.DataFrame()
-    if isinstance(df.columns, pd.MultiIndex): df.columns = df.columns.get_level_values(0)
-    df = df.dropna()
-    return df.resample("4h").agg({"Open":"first","High":"max","Low":"min","Close":"last"}).dropna() if iv=="4h" else df
+    try:
+        df = yf.download(sym, period=p, interval="1h" if iv=="4h" else iv, progress=False, threads=False)
+        if df is None or df.empty:
+            return pd.DataFrame()
+        if isinstance(df.columns, pd.MultiIndex):
+            df.columns = df.columns.get_level_values(0)
+        df = df[['Open', 'High', 'Low', 'Close']].dropna()
+        if iv == "4h":
+            df = df.resample("4h").agg({"Open":"first","High":"max","Low":"min","Close":"last"}).dropna()
+        return df
+    except Exception:
+        return pd.DataFrame()
 
 def add_indicators(df):
     df = df.copy()
@@ -41,7 +77,7 @@ def add_indicators(df):
     delta = df['Close'].diff()
     gain = (delta.where(delta > 0, 0)).rolling(window=14).mean()
     loss = (-delta.where(delta < 0, 0)).rolling(window=14).mean()
-    rs = gain / loss
+    rs = gain / loss.replace(0, 1e-10)
     df['RSI'] = 100 - (100 / (1 + rs))
     
     # ATR (14) & ADX (14)
@@ -55,21 +91,24 @@ def add_indicators(df):
     down_move = -df['Low'].diff()
     plus_dm = up_move.where((up_move > down_move) & (up_move > 0), 0.0)
     minus_dm = down_move.where((down_move > up_move) & (down_move > 0), 0.0)
-    plus_di = 100 * (plus_dm.ewm(alpha=1/14).mean() / df['ATR'])
-    minus_di = 100 * (minus_dm.ewm(alpha=1/14).mean() / df['ATR'])
-    dx = (abs(plus_di - minus_di) / (plus_di + minus_di)) * 100
+    atr_safe = df['ATR'].replace(0, 1e-10)
+    plus_di = 100 * (plus_dm.ewm(alpha=1/14).mean() / atr_safe)
+    minus_di = 100 * (minus_dm.ewm(alpha=1/14).mean() / atr_safe)
+    di_sum = (plus_di + minus_di).replace(0, 1e-10)
+    dx = (abs(plus_di - minus_di) / di_sum) * 100
     df['ADX'] = dx.ewm(alpha=1/14).mean()
     return df
 
 def trend(df):
-    if len(df) < 50: return "N/A"
+    if len(df) < 30: return "N/A"
     e20, e50, c = float(df['EMA20'].iloc[-1]), float(df['EMA50'].iloc[-1]), float(df['Close'].iloc[-1])
     return "🟢 Bullish" if c > e20 > e50 else ("🔴 Bearish" if c < e20 < e50 else "🟡 Ranging")
 
 def analyze(df, dec):
     c, pc = float(df['Close'].iloc[-1]), float(df['Close'].iloc[-2])
     atr = float(df['ATR'].iloc[-1]) if not pd.isna(df['ATR'].iloc[-1]) else (c * 0.002)
-    res, sup = float(df.iloc[-32:-2]['High'].max()), float(df.iloc[-32:-2]['Low'].min())
+    lookback = min(32, len(df)-2)
+    res, sup = float(df.iloc[-lookback:-2]['High'].max()), float(df.iloc[-lookback:-2]['Low'].min())
     buf = atr * 0.5
     dl = dh = sl = sh = None
     avg_b = float((df['Close'] - df['Open']).abs().iloc[-25:-1].mean())
@@ -107,17 +146,18 @@ with tab1:
     if st.button("🔍 অ্যানালাইসিস দেখুন", use_container_width=True, type="primary"):
         tk = pairs[pn]
         dec = 2 if tk in ["GC=F","USDJPY=X","ETH-USD"] else 5
-        df = get_df(tk, *tfs[tfl])
-        df_htf = get_df(tk, *htf_map[tfl])
-        dfd = get_df(tk, "5d", "1d")
+        with st.spinner("ডেটা লোড হচ্ছে..."):
+            df = get_df(tk, *tfs[tfl])
+            df_htf = get_df(tk, *htf_map[tfl])
+            dfd = get_df(tk, "5d", "1d")
         
-        pdh = round(float(dfd['High'].iloc[-2]), dec) if len(dfd)>=2 else None
-        pdl = round(float(dfd['Low'].iloc[-2]), dec) if len(dfd)>=2 else None
-        
-        if not df.empty:
+        if len(df) >= 25:
+            pdh = round(float(dfd['High'].iloc[-2]), dec) if len(dfd)>=2 else None
+            pdl = round(float(dfd['Low'].iloc[-2]), dec) if len(dfd)>=2 else None
+            
             df = add_indicators(df)
             ltf_tr = trend(df)
-            htf_tr = trend(add_indicators(df_htf)) if not df_htf.empty else "N/A"
+            htf_tr = trend(add_indicators(df_htf)) if len(df_htf) >= 30 else "N/A"
             z = analyze(df, dec)
             rsi_val = round(float(df['RSI'].iloc[-1]), 1)
             adx_val = round(float(df['ADX'].iloc[-1]), 1) if not pd.isna(df['ADX'].iloc[-1]) else 0
@@ -159,32 +199,3 @@ with tab1:
             if z["dem"]: fig.add_hrect(y0=z["dem"], y1=z["dem"], fillcolor="green", opacity=0.25, annotation_text="Demand", row=1, col=1)
             if z["sup_z"]: fig.add_hrect(y0=z["sup_z"], y1=z["sup_z"], fillcolor="red", opacity=0.25, annotation_text="Supply", row=1, col=1)
             
-            fig.add_hline(y=z["en"], line_dash="dash", line_color="cyan", annotation_text="Entry", row=1, col=1)
-            fig.add_hline(y=z["sl"], line_dash="dot", line_color="red", annotation_text="SL", row=1, col=1)
-            fig.add_hline(y=z["tp"], line_dash="dash", line_color="lime", annotation_text="TP", row=1, col=1)
-            
-            # RSI Sub-chart
-            fig.add_trace(go.Scatter(x=pdf.index, y=pdf['RSI'], line=dict(color='violet', width=1.5), name='RSI'), row=2, col=1)
-            fig.add_hline(y=70, line_dash="dot", line_color="red", row=2, col=1)
-            fig.add_hline(y=30, line_dash="dot", line_color="lime", row=2, col=1)
-            
-            fig.update_layout(xaxis_rangeslider_visible=False, height=480, margin=dict(l=5,r=5,t=20,b=5), template="plotly_dark", showlegend=False)
-            fig.update_xaxes(type="category", showticklabels=False)
-            st.plotly_chart(fig, use_container_width=True)
-
-with tab2:
-    s1, s2 = st.columns(2)
-    sp, stf = s1.selectbox("পেয়ার", list(pairs.keys()), key="sp"), s2.selectbox("টাইমফ্রেম", list(tfs.keys()), index=2, key="stf")
-    if st.button("⚡ ফুল SMC অ্যানালাইসিস দেখুন", use_container_width=True, type="primary"):
-        tk = pairs[sp]
-        dec = 2 if tk in ["GC=F","USDJPY=X","ETH-USD"] else 5
-        dfs = get_df(tk, *tfs[stf])
-        if len(dfs) >= 40:
-            ps = dfs.iloc[-45:].copy()
-            c = float(ps['Close'].iloc[-1])
-            
-            h1, h2 = float(ps.iloc[-45:-22]['High'].max()), float(ps.iloc[-22:-2]['High'].max())
-            l1, l2 = float(ps.iloc[-45:-22]['Low'].min()), float(ps.iloc[-22:-2]['Low'].min())
-
-            h_lbl = "HH" if h2 > h1 else "LH"
-            l_lbl = "HL" if l2 > l1 else "LL"
