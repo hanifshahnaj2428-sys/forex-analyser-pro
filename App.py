@@ -55,21 +55,25 @@ def analyze_zones(df, dec):
     sup = float(lookback['Low'].min())
     buf = (res - sup) * 0.05
     
-    res_b = [res - buf, res]
-    sup_b = [sup, sup + buf]
-    supply_b, demand_b = None, None
+    res_low, res_high = res - buf, res
+    sup_low, sup_high = sup, sup + buf
+    
+    s_low, s_high = None, None
+    d_low, d_high = None, None
     
     avg_body = float((df['Close'] - df['Open']).abs().iloc[-25:-1].mean())
     for i in range(len(df)-2, len(df)-20, -1):
         move = float(df['Close'].iloc[i] - df['Open'].iloc[i])
-        if move > (avg_body * 1.8) and demand_b is None:
-            d_l = float(df['Low'].iloc[i-1])
-            d_h = max(float(df['Open'].iloc[i-1]), float(df['Close'].iloc[i-1]))
-            if c > d_h: demand_b = [d_l, d_h]
-        if move < -(avg_body * 1.8) and supply_b is None:
-            s_h = float(df['High'].iloc[i-1])
-            s_l = min(float(df['Open'].iloc[i-1]), float(df['Close'].iloc[i-1]))
-            if c < s_l: supply_b = [s_l, s_h]
+        if move > (avg_body * 1.8) and d_low is None:
+            dl = float(df['Low'].iloc[i-1])
+            dh = max(float(df['Open'].iloc[i-1]), float(df['Close'].iloc[i-1]))
+            if c > dh:
+                d_low, d_high = dl, dh
+        if move < -(avg_body * 1.8) and s_low is None:
+            sh = float(df['High'].iloc[i-1])
+            sl_val = min(float(df['Open'].iloc[i-1]), float(df['Close'].iloc[i-1]))
+            if c < sl_val:
+                s_low, s_high = sl_val, sh
 
     sig = "⚪ কোনো ব্রেকআউট/রিটেস্ট নেই"
     active = False
@@ -85,31 +89,37 @@ def analyze_zones(df, dec):
     trend = get_trend(df)
     if "Bullish" in trend or "Bullish" in sig:
         direction = "BUY 🟢"
-        entry = demand_b if demand_b else sup_b
-        sl = (demand_b if demand_b else sup_b) - (buf * 0.5)
-        risk = max(abs(entry - sl), buf)
-        tp = entry + (risk * 2.0)
+        entry = d_high if d_high is not None else sup_high
+        sl_price = (d_low if d_low is not None else sup_low) - (buf * 0.5)
+        risk = max(abs(entry - sl_price), buf)
+        tp_price = entry + (risk * 2.0)
     elif "Bearish" in trend or "Bearish" in sig:
         direction = "SELL 🔴"
-        entry = supply_b if supply_b else res_b
-        sl = (supply_b if supply_b else res_b) + (buf * 0.5)
-        risk = max(abs(sl - entry), buf)
-        tp = entry - (risk * 2.0)
+        entry = s_low if s_low is not None else res_low
+        sl_price = (s_high if s_high is not None else res_high) + (buf * 0.5)
+        risk = max(abs(sl_price - entry), buf)
+        tp_price = entry - (risk * 2.0)
     else:
         direction = "WAIT / RANGE 🟡"
-        entry = sup_b
-        sl = sup_b - (buf * 0.5)
-        tp = res_b
+        entry = sup_high
+        sl_price = sup_low - (buf * 0.5)
+        tp_price = res_low
 
     return {
-        "price": round(c, dec), "res_b": res_b, "sup_b": sup_b,
-        "supply_b": supply_b, "demand_b": demand_b,
-        "res_t": f"{round(res_b, dec)} - {round(res_b, dec)}",
-        "sup_t": f"{round(sup_b, dec)} - {round(sup_b, dec)}",
-        "supply_t": f"{round(supply_b, dec)} - {round(supply_b, dec)}" if supply_b else "ফ্রেশ জোন নেই",
-        "demand_t": f"{round(demand_b, dec)} - {round(demand_b, dec)}" if demand_b else "ফ্রেশ জোন নেই",
+        "price": round(c, dec),
+        "res_b": (res_low, res_high),
+        "sup_b": (sup_low, sup_high),
+        "supply_b": (s_low, s_high) if s_low is not None else None,
+        "demand_b": (d_low, d_high) if d_low is not None else None,
+        "res_t": f"{round(res_low, dec)} - {round(res_high, dec)}",
+        "sup_t": f"{round(sup_low, dec)} - {round(sup_high, dec)}",
+        "supply_t": f"{round(s_low, dec)} - {round(s_high, dec)}" if s_low is not None else "ফ্রেশ জোন নেই",
+        "demand_t": f"{round(d_low, dec)} - {round(d_high, dec)}" if d_low is not None else "ফ্রেশ জোন নেই",
         "sig": sig, "active": active,
-        "dir": direction, "entry": round(entry, dec), "sl": round(sl, dec), "tp": round(tp, dec)
+        "dir": direction,
+        "entry": round(entry, dec),
+        "sl": round(sl_price, dec),
+        "tp": round(tp_price, dec)
     }
 
 tab1, tab2, tab3 = st.tabs(["📊 চার্ট ও জোন", "🚀 অল-পেয়ার স্ক্যানার", "📒 ট্রেডিং জার্নাল"])
@@ -142,12 +152,12 @@ with tab1:
             
             plot_df = df1h.iloc[-45:]
             fig = go.Figure(data=[go.Candlestick(x=plot_df.index, open=plot_df['Open'], high=plot_df['High'], low=plot_df['Low'], close=plot_df['Close'])])
-            fig.add_hrect(y0=z["res_b"], y1=z["res_b"], fillcolor="rgba(255,165,0,0.20)", line_color="orange", annotation_text="Resistance", annotation_position="top left")
-            fig.add_hrect(y0=z["sup_b"], y1=z["sup_b"], fillcolor="rgba(0,191,255,0.20)", line_color="deepskyblue", annotation_text="Support", annotation_position="bottom left")
+            fig.add_hrect(y0=z["res_b"][0], y1=z["res_b"][1], fillcolor="rgba(255,165,0,0.20)", line_color="orange", annotation_text="Resistance", annotation_position="top left")
+            fig.add_hrect(y0=z["sup_b"][0], y1=z["sup_b"][1], fillcolor="rgba(0,191,255,0.20)", line_color="deepskyblue", annotation_text="Support", annotation_position="bottom left")
             if z["supply_b"]:
-                fig.add_hrect(y0=z["supply_b"], y1=z["supply_b"], fillcolor="rgba(255,0,0,0.25)", line_color="red", annotation_text="Supply", annotation_position="top right")
+                fig.add_hrect(y0=z["supply_b"][0], y1=z["supply_b"][1], fillcolor="rgba(255,0,0,0.25)", line_color="red", annotation_text="Supply", annotation_position="top right")
             if z["demand_b"]:
-                fig.add_hrect(y0=z["demand_b"], y1=z["demand_b"], fillcolor="rgba(0,200,83,0.25)", line_color="green", annotation_text="Demand", annotation_position="bottom right")
+                fig.add_hrect(y0=z["demand_b"][0], y1=z["demand_b"][1], fillcolor="rgba(0,200,83,0.25)", line_color="green", annotation_text="Demand", annotation_position="bottom right")
             
             fig.add_hline(y=z["entry"], line_dash="dash", line_color="#00E5FF", annotation_text=f"Entry: {z['entry']}", annotation_position="top left")
             fig.add_hline(y=z["sl"], line_dash="dot", line_color="#FF1744", annotation_text=f"SL: {z['sl']}", annotation_position="bottom left")
@@ -196,10 +206,3 @@ with tab3:
             st.success("✅ সেভ হয়েছে!")
     if os.path.exists(j_file):
         df_j = pd.read_csv(j_file)
-        wins = len(df_j[df_j["Result"] == "Win ✅"])
-        total_t = max(len(df_j), 1)
-        m1, m2, m3 = st.columns(3)
-        m1.metric("ট্রেড", len(df_j))
-        m2.metric("উইন রেট", f"{(wins/total_t)*100:.1f}%")
-        m3.metric("নেট PnL", f"${df_j['PnL ($)'].sum():.2f}")
-        st.dataframe(df_j, use_container_width=True, hide_index=True)
