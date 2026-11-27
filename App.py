@@ -4,10 +4,9 @@ import pandas as pd
 import plotly.graph_objects as go
 from datetime import datetime
 import pytz
-import os
 
 st.set_page_config(page_title="BD Pro Market & SMC", page_icon="📊", layout="centered")
-st.title("📊 প্রো মার্কেট, SMC ও জার্নাল")
+st.title("📊 প্রো মার্কেট ও SMC অ্যানালাইসিস")
 
 bd_tz = pytz.timezone('Asia/Dhaka')
 now_bd = datetime.now(bd_tz)
@@ -55,7 +54,7 @@ def analyze(df, dec):
         d, en, stp, tp = "RANGE 🟡", sup+buf, sup-buf*0.5, res-buf
     return {"p":round(c,dec), "res":(res-buf,res), "sup":(sup,sup+buf), "dem":(dl,dh) if dl else None, "sup_z":(sl,sh) if sl else None, "sig":sig, "dir":d, "en":round(en,dec), "sl":round(stp,dec), "tp":round(tp,dec)}
 
-tab1, tab2, tab3, tab4 = st.tabs(["📊 চার্ট ও জোন", "🧠 SMC", "🚀 স্ক্যানার", "📒 জার্নাল"])
+tab1, tab2 = st.tabs(["📊 চার্ট ও জোন", "🧠 SMC অ্যানালাইসিস"])
 
 with tab1:
     c1, c2 = st.columns(2)
@@ -100,7 +99,6 @@ with tab2:
             ps = dfs.iloc[-40:].copy()
             c = float(ps['Close'].iloc[-1])
             
-            # ১. Market Structure (HH, HL, LH, LL) ও BOS / CHoCH
             h1, h2 = float(ps.iloc[-40:-20]['High'].max()), float(ps.iloc[-20:-2]['High'].max())
             l1, l2 = float(ps.iloc[-40:-20]['Low'].min()), float(ps.iloc[-20:-2]['Low'].min())
             idx_h1, idx_h2 = ps.iloc[-40:-20]['High'].idxmax(), ps.iloc[-20:-2]['High'].idxmax()
@@ -117,35 +115,32 @@ with tab2:
             else:
                 bos_choch = f"🟡 Ranging Structure ({round(l2, dec)} - {round(h2, dec)})"
 
-            # ২. Premium & Discount Zone (50% Equilibrium)
             sw_hi, sw_lo = max(h1, h2), min(l1, l2)
             eq = (sw_hi + sw_lo) / 2
             pd_zone = "🔴 Premium Zone (Sell Area)" if c > eq else "🟢 Discount Zone (Buy Area)"
 
-            # ৩. Liquidity (BSL & SSL)
-            bsl = round(sw_hi, dec)
-            ssl = round(sw_lo, dec)
+            bsl, ssl = round(sw_hi, dec), round(sw_lo, dec)
 
-            # ৪. FVG & Order Block (OB)
-            bfvg = sfvg = bob = sob = None
+            bfvg_l = bfvg_h = sfvg_l = sfvg_h = None
+            bob_l = bob_h = sob_l = sob_h = None
             for i in range(len(dfs)-2, max(len(dfs)-25, 2), -1):
-                if dfs['Low'].iloc[i] > dfs['High'].iloc[i-2] and not bfvg:
-                    bfvg = (round(float(dfs['High'].iloc[i-2]),dec), round(float(dfs['Low'].iloc[i]),dec))
-                    bob = (round(float(dfs['Low'].iloc[i-2]),dec), round(float(dfs['High'].iloc[i-2]),dec))
-                if dfs['High'].iloc[i] < dfs['Low'].iloc[i-2] and not sfvg:
-                    sfvg = (round(float(dfs['High'].iloc[i]),dec), round(float(dfs['Low'].iloc[i-2]),dec))
-                    sob = (round(float(dfs['Low'].iloc[i-2]),dec), round(float(dfs['High'].iloc[i-2]),dec))
+                if dfs['Low'].iloc[i] > dfs['High'].iloc[i-2] and bfvg_l is None:
+                    bfvg_l, bfvg_h = round(float(dfs['High'].iloc[i-2]),dec), round(float(dfs['Low'].iloc[i]),dec)
+                    bob_l, bob_h = round(float(dfs['Low'].iloc[i-2]),dec), round(float(dfs['High'].iloc[i-2]),dec)
+                if dfs['High'].iloc[i] < dfs['Low'].iloc[i-2] and sfvg_l is None:
+                    sfvg_l, sfvg_h = round(float(dfs['High'].iloc[i]),dec), round(float(dfs['Low'].iloc[i-2]),dec)
+                    sob_l, sob_h = round(float(dfs['Low'].iloc[i-2]),dec), round(float(dfs['High'].iloc[i-2]),dec)
 
             buf = (sw_hi - sw_lo) * 0.05
-            if c <= eq and bob:
+            if c <= eq and bob_l is not None:
                 s_dir = "BUY (Discount OB) 🟢"
-                s_en = bob
-                s_sl = round(bob - buf*0.5, dec)
+                s_en = bob_h
+                s_sl = round(bob_l - buf*0.5, dec)
                 s_tp = round(s_en + max(abs(s_en - s_sl), buf)*2, dec)
-            elif c > eq and sob:
+            elif c > eq and sob_l is not None:
                 s_dir = "SELL (Premium OB) 🔴"
-                s_en = sob
-                s_sl = round(sob + buf*0.5, dec)
+                s_en = sob_l
+                s_sl = round(sob_h + buf*0.5, dec)
                 s_tp = round(s_en - max(abs(s_sl - s_en), buf)*2, dec)
             else:
                 if c <= eq:
@@ -161,7 +156,7 @@ with tab2:
             t1, t2, t3 = st.columns(3)
             t1.metric(f"SMC Entry ({s_dir})", s_en); t2.metric("Stop Loss", s_sl); t3.metric("Exit (TP)", s_tp)
 
-            # SMC চার্ট ভিজ্যুয়ালাইজেশন
             figs = go.Figure(data=[go.Candlestick(x=ps.index, open=ps['Open'], high=ps['High'], low=ps['Low'], close=ps['Close'], name="Price")])
             
             figs.add_hrect(y0=eq, y1=sw_hi, fillcolor="rgba(255,82,82,0.08)", line_width=0, annotation_text="PREMIUM (Sell)", annotation_position="top right")
+            figs.add_hrect(y0=sw_lo, y1=eq, fillcolor="rgba(0,230,118,0.08)", line_width=0, annotation_text="DISCOUNT (Buy)", annotation_position="bottom right")
