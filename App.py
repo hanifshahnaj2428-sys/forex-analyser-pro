@@ -11,43 +11,6 @@ st.set_page_config(page_title="BD Pro Market & Journal", page_icon="📊", layou
 st.title("📊 প্রো মার্কেট ও ট্রেডিং জার্নাল")
 st.caption("ফরেক্স, গোল্ড, ইথিরিয়াম অ্যানালাইসিস ও ট্রেড হিস্ট্রি")
 
-# ১. বাংলাদেশ সময় অনুযায়ী লাইভ সেশন নির্ণয়
-def get_bd_session():
-    bd_tz = pytz.timezone('Asia/Dhaka')
-    now_bd = datetime.now(bd_tz)
-    hour = now_bd.hour
-    time_str = now_bd.strftime("%I:%M %p (BD Time)")
-    
-    sessions = []
-    if 6 <= hour < 15:
-        sessions.append("🌏 Asian Session")
-    if 13 <= hour < 22:
-        sessions.append("🇬🇧 London Session")
-    if 18 <= hour or hour < 3:
-        sessions.append("🇺🇸 New York Session")
-        
-    if 18 <= hour < 22:
-        status = "🔥 HIGH VOLUME: London + New York Overlap"
-        box_type = "success"
-    elif sessions:
-        status = " | ".join(sessions)
-        box_type = "info"
-    else:
-        status = "💤 অফ-সেশন (ক্রিপ্টো/ETH ২৪/৭ সচল)"
-        box_type = "warning"
-        
-    return time_str, status, box_type
-
-bd_time, session_status, session_box = get_bd_session()
-with st.container(border=True):
-    st.markdown(f"**🕒 বর্তমান সময়:** {bd_time}")
-    if session_box == "success":
-        st.success(session_status)
-    elif session_box == "info":
-        st.info(session_status)
-    else:
-        st.warning(session_status)
-
 pairs = {
     "EUR/USD": "EURUSD=X",
     "GBP/USD": "GBPUSD=X",
@@ -56,6 +19,25 @@ pairs = {
     "GOLD (XAU/USD)": "GC=F",
     "ETHEREUM (ETH/USD)": "ETH-USD"
 }
+
+def get_bd_session():
+    bd_tz = pytz.timezone('Asia/Dhaka')
+    now_bd = datetime.now(bd_tz)
+    hour = now_bd.hour
+    time_str = now_bd.strftime("%I:%M %p (BD Time)")
+    sessions = []
+    if 6 <= hour < 15:
+        sessions.append("🌏 Asian Session")
+    if 13 <= hour < 22:
+        sessions.append("🇬🇧 London Session")
+    if 18 <= hour or hour < 3:
+        sessions.append("🇺🇸 New York Session")
+    if 18 <= hour < 22:
+        return time_str, "🔥 HIGH VOLUME: London + New York Overlap", "success"
+    elif sessions:
+        return time_str, " | ".join(sessions), "info"
+    else:
+        return time_str, "💤 অফ-সেশন (ক্রিপ্টো/ETH ২৪/৭ সচল)", "warning"
 
 def get_clean_data(symbol, period, interval):
     try:
@@ -74,34 +56,26 @@ def check_trend(df):
     ema20 = df['Close'].ewm(span=20, adjust=False).mean().iloc[-1]
     ema50 = df['Close'].ewm(span=50, adjust=False).mean().iloc[-1]
     close = float(df['Close'].iloc[-1])
-    
     if close > ema20 and ema20 > ema50:
         return "🟢 Bullish"
     elif close < ema20 and ema20 < ema50:
         return "🔴 Bearish"
-    else:
-        return "🟡 Ranging"
+    return "🟡 Ranging"
 
 def analyze_zones(df, decimals):
     current_close = float(df['Close'].iloc[-1])
     prev_close = float(df['Close'].iloc[-2])
-    
     lookback = df.iloc[-32:-2]
     res_level = float(lookback['High'].max())
     sup_level = float(lookback['Low'].min())
     zone_buffer = (res_level - sup_level) * 0.05
-    
-    res_low = res_level - zone_buffer
-    res_high = res_level
-    sup_low = sup_level
-    sup_high = sup_level + zone_buffer
-    
+    res_low, res_high = res_level - zone_buffer, res_level
+    sup_low, sup_high = sup_level, sup_level + zone_buffer
     supply_low, supply_high = None, None
     demand_low, demand_high = None, None
-    
     body_sizes = (df['Close'] - df['Open']).abs()
     avg_body = float(body_sizes.iloc[-25:-1].mean())
-    
+
     for i in range(len(df)-2, len(df)-20, -1):
         move = float(df['Close'].iloc[i] - df['Open'].iloc[i])
         if move > (avg_body * 1.8) and demand_low is None:
@@ -114,10 +88,9 @@ def analyze_zones(df, decimals):
             s_low = min(float(df['Open'].iloc[i-1]), float(df['Close'].iloc[i-1]))
             if current_close < s_low:
                 supply_low, supply_high = s_low, s_high
-                
+
     breakout_status = "⚪ কোনো ব্রেকআউট/রিটেস্ট নেই"
     is_active_signal = False
-    
     if current_close > res_level and prev_close <= res_level:
         breakout_status = f"🚀 Bullish Breakout! ({round(res_level, decimals)})"
         is_active_signal = True
@@ -130,7 +103,7 @@ def analyze_zones(df, decimals):
     elif current_close < sup_level and abs(float(df['High'].iloc[-1]) - sup_level) <= zone_buffer * 1.5:
         breakout_status = f"🎯 Bearish Breakout + Retest! ({round(sup_level, decimals)})"
         is_active_signal = True
-        
+
     return {
         "price": round(current_close, decimals),
         "res_bounds": [res_low, res_high],
@@ -148,82 +121,90 @@ def analyze_zones(df, decimals):
 def draw_zone_chart(df, zones, title):
     plot_df = df.iloc[-45:].copy()
     fig = go.Figure(data=[go.Candlestick(
-        x=plot_df.index,
-        open=plot_df['Open'],
-        high=plot_df['High'],
-        low=plot_df['Low'],
-        close=plot_df['Close'],
-        name="Price"
+        x=plot_df.index, open=plot_df['Open'], high=plot_df['High'],
+        low=plot_df['Low'], close=plot_df['Close'], name="Price"
     )])
-    
     r_low, r_high = zones["res_bounds"]
     s_low, s_high = zones["sup_bounds"]
-    
     fig.add_hrect(y0=r_low, y1=r_high, fillcolor="rgba(255, 165, 0, 0.25)", line_width=1, line_color="orange", annotation_text="Resistance", annotation_position="top left")
     fig.add_hrect(y0=s_low, y1=s_high, fillcolor="rgba(0, 191, 255, 0.25)", line_width=1, line_color="deepskyblue", annotation_text="Support", annotation_position="bottom left")
-    
     if zones["supply_bounds"]:
         sup_l, sup_h = zones["supply_bounds"]
         fig.add_hrect(y0=sup_l, y1=sup_h, fillcolor="rgba(255, 0, 0, 0.28)", line_width=1.5, line_color="red", annotation_text="Supply (Sell)", annotation_position="top right")
     if zones["demand_bounds"]:
         dem_l, dem_h = zones["demand_bounds"]
         fig.add_hrect(y0=dem_l, y1=dem_h, fillcolor="rgba(0, 200, 83, 0.28)", line_width=1.5, line_color="green", annotation_text="Demand (Buy)", annotation_position="bottom right")
-
     fig.update_layout(title=title, xaxis_rangeslider_visible=False, height=380, margin=dict(l=10, r=10, t=40, b=10), template="plotly_dark", xaxis_type="category")
     fig.update_xaxes(showticklabels=False)
     return fig
 
-# ট্যাব নেভিগেশন
-tab1, tab2, tab3 = st.tabs(["📊 চার্ট ও জোন", "🚀 অল-পেয়ার স্ক্যানার", "📒 ট্রেডিং জার্নাল"])
-
-# ট্যাব ১: চার্ট ও জোন
-with tab1:
-    selected_pair_name = st.selectbox("অ্যানালাইসিস করার জন্য পেয়ার বেছে নিন:", list(pairs.keys()), key="chart_pair_select")
+def render_chart_tab():
+    selected_pair_name = st.selectbox("অ্যানালাইসিস করার জন্য পেয়ার বেছে নিন:", list(pairs.keys()))
     ticker = pairs[selected_pair_name]
-    
-    if st.button(f"🔍 {selected_pair_name} চার্ট ও জোন দেখুন", use_container_width=True, type="primary", key="btn_chart_analyze"):
-        with st.spinner("চার্ট এবং জোন তৈরি হচ্ছে..."):
-            decimals = 2 if ("GC=F" in ticker or "JPY" in ticker or "ETH" in ticker) else 5
-            df_1d = get_clean_data(ticker, "6mo", "1d")
-            df_1h = get_clean_data(ticker, "1mo", "1h")
-            df_15m = get_clean_data(ticker, "5d", "15m")
-            
-            if df_1d.empty or df_1h.empty or df_15m.empty:
-                st.error("⚠️ মার্কেট ডেটা লোড করা সম্ভব হয়নি। কিছুক্ষণ পর আবার চেষ্টা করুন।")
-            else:
-                zones_1h = analyze_zones(df_1h, decimals)
-                st.subheader(f"💰 বর্তমান প্রাইস: {zones_1h['price']}")
-                
-                col1, col2, col3 = st.columns(3)
-                col1.metric("Daily (1D)", check_trend(df_1d))
-                col2.metric("Hourly (1H)", check_trend(df_1h))
-                col3.metric("15 Min (15M)", check_trend(df_15m))
-                
-                if zones_1h["active"]:
-                    st.success(f"**সিগন্যাল অ্যালার্ট (1H):** {zones_1h['breakout']}")
-                else:
-                    st.info(f"**স্ট্যাটাস (1H):** {zones_1h['breakout']}")
-                
-                fig_1h = draw_zone_chart(df_1h, zones_1h, f"{selected_pair_name} - 1H Smart Zones")
-                st.plotly_chart(fig_1h, use_container_width=True)
-                
-                with st.container(border=True):
-                    st.markdown("#### 📍 গুরুত্বপূর্ণ প্রাইস জোন (1H)")
-                    c1, c2 = st.columns(2)
-                    c1.markdown(f"**🔴 Supply (Sell Zone):**\n`{zones_1h['supply_text']}`")
-                    c2.markdown(f"**🟢 Demand (Buy Zone):**\n`{zones_1h['demand_text']}`")
-                    st.divider()
-                    c3, c4 = st.columns(2)
-                    c3.markdown(f"**🟠 Resistance:**\n`{zones_1h['res_text']}`")
-                    c4.markdown(f"**🔵 Support:**\n`{zones_1h['sup_text']}`")
+    if not st.button(f"🔍 {selected_pair_name} চার্ট ও জোন দেখুন", use_container_width=True, type="primary"):
+        return
+    with st.spinner("চার্ট এবং জোন তৈরি হচ্ছে..."):
+        decimals = 2 if ("GC=F" in ticker or "JPY" in ticker or "ETH" in ticker) else 5
+        df_1d = get_clean_data(ticker, "6mo", "1d")
+        df_1h = get_clean_data(ticker, "1mo", "1h")
+        df_15m = get_clean_data(ticker, "5d", "15m")
+        if df_1d.empty or df_1h.empty or df_15m.empty:
+            st.error("⚠️ মার্কেট ডেটা লোড করা সম্ভব হয়নি।")
+            return
+        zones_1h = analyze_zones(df_1h, decimals)
+        st.subheader(f"💰 বর্তমান প্রাইস: {zones_1h['price']}")
+        c1, c2, c3 = st.columns(3)
+        c1.metric("Daily (1D)", check_trend(df_1d))
+        c2.metric("Hourly (1H)", check_trend(df_1h))
+        c3.metric("15 Min (15M)", check_trend(df_15m))
+        if zones_1h["active"]:
+            st.success(f"**সিগন্যাল অ্যালার্ট (1H):** {zones_1h['breakout']}")
+        else:
+            st.info(f"**স্ট্যাটাস (1H):** {zones_1h['breakout']}")
+        st.plotly_chart(draw_zone_chart(df_1h, zones_1h, f"{selected_pair_name} - 1H Smart Zones"), use_container_width=True)
+        with st.container(border=True):
+            st.markdown("#### 📍 গুরুত্বপূর্ণ প্রাইস জোন (1H)")
+            col1, col2 = st.columns(2)
+            col1.markdown(f"**🔴 Supply (Sell Zone):**\n`{zones_1h['supply_text']}`")
+            col2.markdown(f"**🟢 Demand (Buy Zone):**\n`{zones_1h['demand_text']}`")
+            st.divider()
+            col3, col4 = st.columns(2)
+            col3.markdown(f"**🟠 Resistance:**\n`{zones_1h['res_text']}`")
+            col4.markdown(f"**🔵 Support:**\n`{zones_1h['sup_text']}`")
 
-# ট্যাব ২: অল-পেয়ার স্ক্যানার
-with tab2:
+def render_scanner_tab():
     st.subheader("🚀 সব পেয়ারের লাইভ মার্কেট স্ক্যানার (1H)")
-    if st.button("🔄 এখনই স্ক্যান করুন", use_container_width=True, type="primary", key="btn_scan_all"):
-        scan_results = []
-        progress_bar = st.progress(0)
-        for idx, (name, ticker) in enumerate(pairs.items()):
-            decimals = 2 if ("GC=F" in ticker or "JPY" in ticker or "ETH" in ticker) else 5
-            df_1h = get_clean_data(ticker, "1mo", "1h")
-            if not df_1h.empty:
+    if not st.button("🔄 এখনই স্ক্যান করুন", use_container_width=True, type="primary"):
+        return
+    scan_results = []
+    progress_bar = st.progress(0)
+    items = list(pairs.items())
+    for idx, (name, ticker) in enumerate(items):
+        decimals = 2 if ("GC=F" in ticker or "JPY" in ticker or "ETH" in ticker) else 5
+        df_1h = get_clean_data(ticker, "1mo", "1h")
+        if not df_1h.empty:
+            z = analyze_zones(df_1h, decimals)
+            scan_results.append({
+                "Pair": name,
+                "Price": z["price"],
+                "Trend (1H)": check_trend(df_1h),
+                "Status / Signal": z["breakout"]
+            })
+        progress_bar.progress((idx + 1) / len(items))
+    if scan_results:
+        st.dataframe(pd.DataFrame(scan_results), use_container_width=True, hide_index=True)
+    else:
+        st.warning("⚠️ এই মুহূর্তে ডেটা পাওয়া যায়নি।")
+
+def render_journal_tab():
+    st.subheader("📒 পার্সোনাল ট্রেডিং জার্নাল")
+    journal_file = "trade_journal.csv"
+    with st.expander("➕ নতুন ট্রেড লগ করুন", expanded=True):
+        with st.form("journal_form", clear_on_submit=True):
+            c1, c2 = st.columns(2)
+            j_pair = c1.selectbox("পেয়ার", list(pairs.keys()))
+            j_type = c2.selectbox("পজিশন", ["BUY 🟢", "SELL 🔴"])
+            c3, c4 = st.columns(2)
+            j_result = c3.selectbox("ফলাফল", ["Win ✅", "Loss ❌", "Break-even ⚪"])
+            j_pnl = c4.number_input("প্রফিট / লস ($)", value=0.0, step=1.0)
+            j_note = st.text_input("ট্রেড নোট / স্ট্র্যাটেজি")
