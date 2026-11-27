@@ -70,10 +70,13 @@ def analyze(df, dec):
         d, en, stp, tp = "RANGE 🟡", sup+buf, sup-buf*0.5, res-buf
     return {"p":round(c,dec), "res":(res-buf,res), "sup":(sup,sup+buf), "dem":(dl,dh) if dl else None, "sup_z":(sl,sh) if sl else None, "sig":sig, "dir":d, "en":round(en,dec), "sl":round(stp,dec), "tp":round(tp,dec)}
 
-def base_chart(df_slice, h=300):
+def base_chart(df_slice, h=380):
     fig = go.Figure(data=[go.Candlestick(
         x=list(range(len(df_slice))),
-        open=df_slice['Open'], high=df_slice['High'], low=df_slice['Low'], close=df_slice['Close'],
+        open=df_slice['Open'].tolist(),
+        high=df_slice['High'].tolist(),
+        low=df_slice['Low'].tolist(),
+        close=df_slice['Close'].tolist(),
         name="Price"
     )])
     fig.update_layout(
@@ -116,10 +119,10 @@ with tab1:
             
             pdf = df.iloc[-45:]
             fig = base_chart(pdf, h=380)
-            fig.add_hrect(y0=z["res"][0], y1=z["res"][1], fillcolor="orange", opacity=0.2, annotation_text="Res")
-            fig.add_hrect(y0=z["sup"][0], y1=z["sup"][1], fillcolor="deepskyblue", opacity=0.2, annotation_text="Sup")
-            if z["dem"]: fig.add_hrect(y0=z["dem"][0], y1=z["dem"][1], fillcolor="green", opacity=0.25, annotation_text="Demand")
-            if z["sup_z"]: fig.add_hrect(y0=z["sup_z"][0], y1=z["sup_z"][1], fillcolor="red", opacity=0.25, annotation_text="Supply")
+            fig.add_hrect(y0=z["res"], y1=z["res"], fillcolor="orange", opacity=0.2, annotation_text="Res")
+            fig.add_hrect(y0=z["sup"], y1=z["sup"], fillcolor="deepskyblue", opacity=0.2, annotation_text="Sup")
+            if z["dem"]: fig.add_hrect(y0=z["dem"], y1=z["dem"], fillcolor="green", opacity=0.25, annotation_text="Demand")
+            if z["sup_z"]: fig.add_hrect(y0=z["sup_z"], y1=z["sup_z"], fillcolor="red", opacity=0.25, annotation_text="Supply")
             fig.add_hline(y=z["en"], line_dash="dash", line_color="cyan", annotation_text="Entry")
             fig.add_hline(y=z["sl"], line_dash="dot", line_color="red", annotation_text="SL")
             fig.add_hline(y=z["tp"], line_dash="dash", line_color="lime", annotation_text="Exit")
@@ -135,59 +138,69 @@ with tab2:
     sp = s1.selectbox("পেয়ার", list(pairs.keys()), key="p2")
     stf = s2.selectbox("টাইমফ্রেম", list(tfs.keys()), index=2, key="tf2")
     
-    if st.button("⚡ ভিজ্যুয়াল SMC ব্রেকডাউন দেখুন", use_container_width=True, type="primary", key="b2"):
-        tk = pairs[sp]
-        dec = 2 if tk in ["GC=F","USDJPY=X","ETH-USD"] else 5
-        dfs = get_df(tk, *tfs[stf])
+    smc_tool = st.selectbox(
+        "SMC উপাদান নির্বাচন করুন (ছবি ও অ্যানালাইসিস):",
+        [
+            "১. ফেয়ার ভ্যালু গ্যাপ (Fair Value Gap & 50% CE)",
+            "২. অর্ডার ব্লক (Institutional Order Blocks)",
+            "৩. মার্কেট স্ট্রাকচার (BOS ও CHoCH)",
+            "৪. প্রিমিয়াম, ডিসকাউন্ট ও OTE জোন",
+            "৫. লিকুইডিটি পুল (BSL ও SSL Sweep)"
+        ],
+        key="smc_tool"
+    )
+    
+    tk = pairs[sp]
+    dec = 2 if tk in ["GC=F","USDJPY=X","ETH-USD"] else 5
+    dfs = get_df(tk, *tfs[stf])
+    
+    if len(dfs) >= 35:
+        ps = dfs.iloc[-45:].copy().reset_index(drop=True)
+        c = float(ps['Close'].iloc[-1])
+        mid = len(ps) // 2
         
-        if len(dfs) >= 35:
-            ps = dfs.iloc[-45:].copy().reset_index(drop=True)
-            c = float(ps['Close'].iloc[-1])
-            mid = len(ps) // 2
-            
-            h1_idx = int(ps.iloc[:mid]['High'].idxmax())
-            h2_idx = int(ps.iloc[mid:-1]['High'].idxmax())
-            l1_idx = int(ps.iloc[:mid]['Low'].idxmin())
-            l2_idx = int(ps.iloc[mid:-1]['Low'].idxmin())
-            
-            h1, h2 = float(ps['High'].iloc[h1_idx]), float(ps['High'].iloc[h2_idx])
-            l1, l2 = float(ps['Low'].iloc[l1_idx]), float(ps['Low'].iloc[l2_idx])
-            
-            h_lbl = "HH" if h2 > h1 else "LH"
-            l_lbl = "HL" if l2 > l1 else "LL"
-            
-            # ১. Market Structure (BOS / CHoCH)
-            st.markdown("### ১. মার্কেট স্ট্রাকচার (BOS ও CHoCH)")
-            if c > h2:
-                ms_type = "🚀 Bullish BOS (ট্রেন্ড কন্টিনিউয়েশন)" if h2 > h1 else "🔄 Bullish CHoCH (ট্রেন্ড রিভার্সাল)"
-                ms_desc = f"প্রাইস আগের সুইং হাই **{round(h2, dec)}** ব্রেক করে উপরে ক্লোজ করেছে।"
-            elif c < l2:
-                ms_type = "🔻 Bearish BOS (ট্রেন্ড কন্টিনিউয়েশন)" if l2 < l1 else "🔄 Bearish CHoCH (ট্রেন্ড রিভার্সাল)"
-                ms_desc = f"প্রাইস আগের সুইং লো **{round(l2, dec)}** ব্রেক করে নিচে ক্লোজ করেছে।"
-            else:
-                ms_type = f"🟡 Internal Structure ({h_lbl} & {l_lbl})"
-                ms_desc = f"মার্কেট বর্তমানে **{round(l2, dec)}** এবং **{round(h2, dec)}** রেঞ্জের ভেতরে স্ট্রাকচার তৈরি করছে।"
-            
-            st.info(f"**{ms_type}** — {ms_desc}")
-            fig1 = base_chart(ps, h=290)
-            fig1.add_trace(go.Scatter(
-                x=[h1_idx, h2_idx], y=[h1, h2],
-                mode="markers+text+lines", text=["H1", h_lbl], textposition="top center",
-                line=dict(color="orange", dash="dot", width=1.5), marker=dict(size=8, color="orange")
-            ))
-            fig1.add_trace(go.Scatter(
-                x=[l1_idx, l2_idx], y=[l1, l2],
-                mode="markers+text+lines", text=["L1", l_lbl], textposition="bottom center",
-                line=dict(color="cyan", dash="dot", width=1.5), marker=dict(size=8, color="cyan")
-            ))
-            fig1.add_hline(y=h2, line_dash="dash", line_color="orange", annotation_text=f"Break High ({round(h2,dec)})")
-            fig1.add_hline(y=l2, line_dash="dash", line_color="cyan", annotation_text=f"Break Low ({round(l2,dec)})")
-            st.plotly_chart(fig1, use_container_width=True)
-            
-            st.divider()
-            
-            # ২. Premium, Discount & OTE Zone
-            st.markdown("### ২. প্রিমিয়াম, ডিসকাউন্ট ও OTE জোন")
-            sw_hi, sw_lo = max(h1, h2), min(l1, l2)
-            rng = sw_hi - sw_lo
-            eq = (sw_hi + sw_lo) / 2
+        h1_idx = int(ps.iloc[:mid]['High'].idxmax())
+        h2_idx = int(ps.iloc[mid:-1]['High'].idxmax())
+        l1_idx = int(ps.iloc[:mid]['Low'].idxmin())
+        l2_idx = int(ps.iloc[mid:-1]['Low'].idxmin())
+        
+        h1, h2 = float(ps['High'].iloc[h1_idx]), float(ps['High'].iloc[h2_idx])
+        l1, l2 = float(ps['Low'].iloc[l1_idx]), float(ps['Low'].iloc[l2_idx])
+        
+        h_lbl = "HH" if h2 > h1 else "LH"
+        l_lbl = "HL" if l2 > l1 else "LL"
+        sw_hi, sw_lo = max(h1, h2), min(l1, l2)
+        rng = sw_hi - sw_lo
+        eq = (sw_hi + sw_lo) / 2
+        
+        # FVG & OB খোঁজা
+        bfvg_l = bfvg_h = sfvg_l = sfvg_h = None
+        bfvg_idx = sfvg_idx = None
+        bob_l = bob_h = sob_l = sob_h = None
+        
+        for i in range(len(ps)-2, 2, -1):
+            if float(ps['Low'].iloc[i]) > float(ps['High'].iloc[i-2]) and bfvg_l is None:
+                bfvg_l, bfvg_h = round(float(ps['High'].iloc[i-2]),dec), round(float(ps['Low'].iloc[i]),dec)
+                bfvg_idx = i
+                bob_l, bob_h = round(float(ps['Low'].iloc[i-2]),dec), round(float(ps['High'].iloc[i-2]),dec)
+            if float(ps['High'].iloc[i]) < float(ps['Low'].iloc[i-2]) and sfvg_l is None:
+                sfvg_l, sfvg_h = round(float(ps['High'].iloc[i]),dec), round(float(ps['Low'].iloc[i-2]),dec)
+                sfvg_idx = i
+                sob_l, sob_h = round(float(ps['Low'].iloc[i-2]),dec), round(float(ps['High'].iloc[i-2]),dec)
+
+        # ১. ফেয়ার ভ্যালু গ্যাপ
+        if "ফেয়ার ভ্যালু গ্যাপ" in smc_tool:
+            b_fvg_status = "N/A"
+            b_ce = None
+            if bfvg_l and bfvg_h and bfvg_idx is not None:
+                b_ce = round((bfvg_l + bfvg_h) / 2, dec)
+                sub_low = float(ps.iloc[bfvg_idx+1:]['Low'].min()) if bfvg_idx+1 < len(ps) else c
+                b_fvg_status = "✅ Unmitigated (Active)" if sub_low > bfvg_l else "⚪ Mitigated (Filled)"
+
+            s_fvg_status = "N/A"
+            s_ce = None
+            if sfvg_l and sfvg_h and sfvg_idx is not None:
+                s_ce = round((sfvg_l + sfvg_h) / 2, dec)
+                sub_high = float(ps.iloc[sfvg_idx+1:]['High'].max()) if sfvg_idx+1 < len(ps) else c
+                s_fvg_status = "✅ Unmitigated (Active)" if sub_high < sfvg_h else "⚪ Mitigated (Filled)"
+
