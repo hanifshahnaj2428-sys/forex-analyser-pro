@@ -7,36 +7,20 @@ from datetime import datetime
 import pytz
 import time
 
-# কাস্টম ট্রেডিং ক্যান্ডেলস্টিক লোগো (SVG)
-trading_logo_svg = """
-<svg xmlns="http://w3.org" viewBox="0 0 100 100" width="42" height="42">
-  <rect width="100" height="100" rx="22" fill="#0F172A"/>
-  <path d="M18 75 L42 52 L60 62 L84 26" stroke="#38BDF8" stroke-width="5" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
-  <line x1="28" y1="35" x2="28" y2="82" stroke="#EF4444" stroke-width="4" stroke-linecap="round"/>
-  <rect x="22" y="45" width="12" height="24" rx="2" fill="#EF4444"/>
-  <line x1="50" y1="25" x2="50" y2="75" stroke="#10B981" stroke-width="4" stroke-linecap="round"/>
-  <rect x="44" y="34" width="12" height="28" rx="2" fill="#10B981"/>
-  <line x1="72" y1="15" x2="72" y2="62" stroke="#10B981" stroke-width="4" stroke-linecap="round"/>
-  <rect x="66" y="22" width="12" height="26" rx="2" fill="#10B981"/>
-</svg>
-"""
+# এক-লাইনের ক্লিন SVG লোগো (যাতে Markdown না ভাঙে)
+logo_svg = '<svg xmlns="http://w3.org" viewBox="0 0 100 100" width="44" height="44"><rect width="100" height="100" rx="22" fill="#0F172A"/><path d="M18 75 L42 52 L60 62 L84 26" stroke="#38BDF8" stroke-width="5" fill="none" stroke-linecap="round" stroke-linejoin="round"/><line x1="28" y1="35" x2="28" y2="82" stroke="#EF4444" stroke-width="4" stroke-linecap="round"/><rect x="22" y="45" width="12" height="24" rx="2" fill="#EF4444"/><line x1="50" y1="25" x2="50" y2="75" stroke="#10B981" stroke-width="4" stroke-linecap="round"/><rect x="44" y="34" width="12" height="28" rx="2" fill="#10B981"/><line x1="72" y1="15" x2="72" y2="62" stroke="#10B981" stroke-width="4" stroke-linecap="round"/><rect x="66" y="22" width="12" height="26" rx="2" fill="#10B981"/></svg>'
 
 st.set_page_config(
     page_title="Pro Trader",
-    page_icon=trading_logo_svg,
+    page_icon="📈",
     layout="centered"
 )
 
-# কাস্টম লোগো ও টাইটেল হেডার
-st.markdown(f"""
-<div style="display: flex; align-items: center; gap: 12px; margin-bottom: 10px;">
-    {trading_logo_svg}
-    <div>
-        <h1 style="margin: 0; padding: 0; font-size: 1.9rem; font-weight: 800; letter-spacing: 0.5px;">Pro Trader</h1>
-        <p style="margin: 0; padding: 0; font-size: 0.85rem; color: #94A3B8;">Advanced Market & SMC Intelligence</p>
-    </div>
-</div>
-""", unsafe_allow_html=True)
+# ইনডেন্টেশন ছাড়া ক্লিন হেডার
+st.markdown(
+    f'<div style="display:flex;align-items:center;gap:12px;margin-bottom:12px;">{logo_svg}<div><h1 style="margin:0;padding:0;font-size:1.85rem;font-weight:800;line-height:1.2;">Pro Trader</h1><p style="margin:0;padding:0;font-size:0.85rem;color:#94A3B8;">Advanced Market & SMC Intelligence</p></div></div>',
+    unsafe_allow_html=True
+)
 
 # বাংলাদেশ সময়, সেশন ও ICT Killzone ডিটেক্টর
 bd_tz = pytz.timezone('Asia/Dhaka')
@@ -73,14 +57,12 @@ def add_indicators(df):
     df['EMA20'] = df['Close'].ewm(span=20, adjust=False).mean()
     df['EMA50'] = df['Close'].ewm(span=50, adjust=False).mean()
     
-    # RSI (14)
     delta = df['Close'].diff()
     gain = (delta.where(delta > 0, 0)).rolling(window=14).mean()
     loss = (-delta.where(delta < 0, 0)).rolling(window=14).mean()
     rs = gain / loss.replace(0, 1e-10)
     df['RSI'] = 100 - (100 / (1 + rs))
     
-    # ATR (14) & ADX (14)
     high_low = df['High'] - df['Low']
     high_close = (df['High'] - df['Close'].shift()).abs()
     low_close = (df['Low'] - df['Close'].shift()).abs()
@@ -142,8 +124,8 @@ tab1, tab2, tab3 = st.tabs(["📊 চার্ট ও RSI", "🧠 SMC অ্য�
 
 with tab1:
     c1, c2 = st.columns(2)
-    pn, tfl = c1.selectbox("পেয়ার", list(pairs.keys())), c2.selectbox("টাইমফ্রেম", list(tfs.keys()), index=2)
-    if st.button("🔍 অ্যানালাইসিস দেখুন", use_container_width=True, type="primary"):
+    pn, tfl = c1.selectbox("পেয়ার", list(pairs.keys()), key="t1_p"), c2.selectbox("টাইমফ্রেম", list(tfs.keys()), index=2, key="t1_tf")
+    if st.button("🔍 অ্যানালাইসিস দেখুন", use_container_width=True, type="primary", key="btn_t1"):
         tk = pairs[pn]
         dec = 2 if tk in ["GC=F","USDJPY=X","ETH-USD"] else 5
         with st.spinner("ডেটা লোড হচ্ছে..."):
@@ -199,3 +181,4 @@ with tab1:
             if z["dem"]: fig.add_hrect(y0=z["dem"], y1=z["dem"], fillcolor="green", opacity=0.25, annotation_text="Demand", row=1, col=1)
             if z["sup_z"]: fig.add_hrect(y0=z["sup_z"], y1=z["sup_z"], fillcolor="red", opacity=0.25, annotation_text="Supply", row=1, col=1)
             
+            fig.add_hline(y=z["en"], line_dash="dash", line_color="cyan", annotation_text="Entry", row=1, col=1)
