@@ -1,3 +1,4 @@
+
 import streamlit as st
 import yfinance as yf
 import pandas as pd
@@ -70,7 +71,7 @@ def check_trend(df):
         return "ডেটা কম ⚪"
     ema20 = df['Close'].ewm(span=20, adjust=False).mean().iloc[-1]
     ema50 = df['Close'].ewm(span=50, adjust=False).mean().iloc[-1]
-    close = df['Close'].iloc[-1]
+    close = float(df['Close'].iloc[-1])
     
     if close > ema20 and ema20 > ema50:
         return "🟢 Bullish"
@@ -88,27 +89,29 @@ def analyze_zones(df, decimals):
     sup_level = float(lookback['Low'].min())
     zone_buffer = (res_level - sup_level) * 0.05
     
-    res_bounds = (res_level - zone_buffer, res_level)
-    sup_bounds = (sup_level, sup_level + zone_buffer)
+    res_low = res_level - zone_buffer
+    res_high = res_level
+    sup_low = sup_level
+    sup_high = sup_level + zone_buffer
     
-    supply_bounds = None
-    demand_bounds = None
+    supply_low, supply_high = None, None
+    demand_low, demand_high = None, None
     
     body_sizes = (df['Close'] - df['Open']).abs()
-    avg_body = body_sizes.iloc[-25:-1].mean()
+    avg_body = float(body_sizes.iloc[-25:-1].mean())
     
     for i in range(len(df)-2, len(df)-20, -1):
         move = float(df['Close'].iloc[i] - df['Open'].iloc[i])
-        if move > (avg_body * 1.8) and demand_bounds is None:
+        if move > (avg_body * 1.8) and demand_low is None:
             d_low = float(df['Low'].iloc[i-1])
             d_high = max(float(df['Open'].iloc[i-1]), float(df['Close'].iloc[i-1]))
             if current_close > d_high:
-                demand_bounds = (d_low, d_high)
-        if move < -(avg_body * 1.8) and supply_bounds is None:
+                demand_low, demand_high = d_low, d_high
+        if move < -(avg_body * 1.8) and supply_low is None:
             s_high = float(df['High'].iloc[i-1])
             s_low = min(float(df['Open'].iloc[i-1]), float(df['Close'].iloc[i-1]))
             if current_close < s_low:
-                supply_bounds = (s_low, s_high)
+                supply_low, supply_high = s_low, s_high
                 
     breakout_status = "⚪ কোনো ব্রেকআউট/রিটেস্ট নেই"
     is_active_signal = False
@@ -128,14 +131,14 @@ def analyze_zones(df, decimals):
         
     return {
         "price": round(current_close, decimals),
-        "res_bounds": res_bounds,
-        "sup_bounds": sup_bounds,
-        "supply_bounds": supply_bounds,
-        "demand_bounds": demand_bounds,
-        "res_text": f"{round(res_bounds, decimals)} - {round(res_bounds, decimals)}",
-        "sup_text": f"{round(sup_bounds, decimals)} - {round(sup_bounds, decimals)}",
-        "supply_text": f"{round(supply_bounds, decimals)} - {round(supply_bounds, decimals)}" if supply_bounds else "ফ্রেশ জোন নেই",
-        "demand_text": f"{round(demand_bounds, decimals)} - {round(demand_bounds, decimals)}" if demand_bounds else "ফ্রেশ জোন নেই",
+        "res_bounds": (res_low, res_high),
+        "sup_bounds": (sup_low, sup_high),
+        "supply_bounds": (supply_low, supply_high) if supply_low is not None else None,
+        "demand_bounds": (demand_low, demand_high) if demand_low is not None else None,
+        "res_text": f"{round(res_low, decimals)} - {round(res_high, decimals)}",
+        "sup_text": f"{round(sup_low, decimals)} - {round(sup_high, decimals)}",
+        "supply_text": f"{round(supply_low, decimals)} - {round(supply_high, decimals)}" if supply_low is not None else "ফ্রেশ জোন নেই",
+        "demand_text": f"{round(demand_low, decimals)} - {round(demand_high, decimals)}" if demand_low is not None else "ফ্রেশ জোন নেই",
         "breakout": breakout_status,
         "active": is_active_signal
     }
@@ -151,13 +154,13 @@ def draw_zone_chart(df, zones, title):
         name="Price"
     )])
     
-    fig.add_hrect(y0=zones["res_bounds"], y1=zones["res_bounds"], fillcolor="rgba(255, 165, 0, 0.25)", line_width=1, line_color="orange", annotation_text="Resistance", annotation_position="top left")
-    fig.add_hrect(y0=zones["sup_bounds"], y1=zones["sup_bounds"], fillcolor="rgba(0, 191, 255, 0.25)", line_width=1, line_color="deepskyblue", annotation_text="Support", annotation_position="bottom left")
+    fig.add_hrect(y0=zones["res_bounds"][0], y1=zones["res_bounds"][1], fillcolor="rgba(255, 165, 0, 0.25)", line_width=1, line_color="orange", annotation_text="Resistance", annotation_position="top left")
+    fig.add_hrect(y0=zones["sup_bounds"][0], y1=zones["sup_bounds"][1], fillcolor="rgba(0, 191, 255, 0.25)", line_width=1, line_color="deepskyblue", annotation_text="Support", annotation_position="bottom left")
     
     if zones["supply_bounds"]:
-        fig.add_hrect(y0=zones["supply_bounds"], y1=zones["supply_bounds"], fillcolor="rgba(255, 0, 0, 0.28)", line_width=1.5, line_color="red", annotation_text="Supply (Sell)", annotation_position="top right")
+        fig.add_hrect(y0=zones["supply_bounds"][0], y1=zones["supply_bounds"][1], fillcolor="rgba(255, 0, 0, 0.28)", line_width=1.5, line_color="red", annotation_text="Supply (Sell)", annotation_position="top right")
     if zones["demand_bounds"]:
-        fig.add_hrect(y0=zones["demand_bounds"], y1=zones["demand_bounds"], fillcolor="rgba(0, 200, 83, 0.28)", line_width=1.5, line_color="green", annotation_text="Demand (Buy)", annotation_position="bottom right")
+        fig.add_hrect(y0=zones["demand_bounds"][0], y1=zones["demand_bounds"][1], fillcolor="rgba(0, 200, 83, 0.28)", line_width=1.5, line_color="green", annotation_text="Demand (Buy)", annotation_position="bottom right")
 
     fig.update_layout(title=title, xaxis_rangeslider_visible=False, height=360, margin=dict(l=10, r=10, t=40, b=10), template="plotly_dark", xaxis_type="category")
     fig.update_xaxes(showticklabels=False)
@@ -213,7 +216,3 @@ with tab2:
     st.subheader("🚀 এক ক্লিকে সব পেয়ার স্ক্যান করুন")
     st.caption("সবগুলো পেয়ারের 1H ট্রেন্ড এবং 15m ব্রেকআউট/রিটেস্ট অবস্থা একসাথে দেখুন")
     
-    if st.button("⚡ সব পেয়ার স্ক্যান শুরু করুন", use_container_width=True, type="primary"):
-        with st.spinner("সবগুলো পেয়ার চেক করা হচ্ছে..."):
-            for name, sym in pairs.items():
-                dec = 2 if ("GC=F" in sym or "JPY" in sym or "ETH" in sym) else 5
