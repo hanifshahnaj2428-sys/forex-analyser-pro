@@ -10,7 +10,6 @@ st.set_page_config(page_title="BD Pro Market & Journal", page_icon="📊", layou
 st.title("📊 প্রো মার্কেট ও ট্রেডিং জার্নাল")
 st.caption("ফরেক্স, গোল্ড, ইথিরিয়াম অ্যানালাইসিস, এন্ট্রি-এক্সিট ও ট্রেড হিস্ট্রি")
 
-# ১. বাংলাদেশ সময় অনুযায়ী লাইভ সেশন
 bd_tz = pytz.timezone('Asia/Dhaka')
 now_bd = datetime.now(bd_tz)
 hr = now_bd.hour
@@ -83,33 +82,32 @@ def analyze_zones(df, dec):
     elif c < sup and abs(float(df['High'].iloc[-1]) - sup) <= buf * 1.5:
         sig, active = f"🎯 Bearish Breakout + Retest! ({round(sup, dec)})", True
 
-    # এন্ট্রি, স্টপ লস (SL) ও এক্সিট (TP) ক্যালকুলেশন
     trend = get_trend(df)
     if "Bullish" in trend or "Bullish" in sig:
         direction = "BUY 🟢"
-        entry = demand_b[1] if demand_b else sup_b[1]
-        sl = (demand_b[0] if demand_b else sup_b[0]) - (buf * 0.5)
+        entry = demand_b if demand_b else sup_b
+        sl = (demand_b if demand_b else sup_b) - (buf * 0.5)
         risk = max(abs(entry - sl), buf)
-        tp = entry + (risk * 2.0)  # 1:2 Risk-Reward
+        tp = entry + (risk * 2.0)
     elif "Bearish" in trend or "Bearish" in sig:
         direction = "SELL 🔴"
-        entry = supply_b[0] if supply_b else res_b[0]
-        sl = (supply_b[1] if supply_b else res_b[1]) + (buf * 0.5)
+        entry = supply_b if supply_b else res_b
+        sl = (supply_b if supply_b else res_b) + (buf * 0.5)
         risk = max(abs(sl - entry), buf)
-        tp = entry - (risk * 2.0)  # 1:2 Risk-Reward
+        tp = entry - (risk * 2.0)
     else:
         direction = "WAIT / RANGE 🟡"
-        entry = sup_b[1]
-        sl = sup_b[0] - (buf * 0.5)
-        tp = res_b[0]
+        entry = sup_b
+        sl = sup_b - (buf * 0.5)
+        tp = res_b
 
     return {
         "price": round(c, dec), "res_b": res_b, "sup_b": sup_b,
         "supply_b": supply_b, "demand_b": demand_b,
-        "res_t": f"{round(res_b[0], dec)} - {round(res_b[1], dec)}",
-        "sup_t": f"{round(sup_b[0], dec)} - {round(sup_b[1], dec)}",
-        "supply_t": f"{round(supply_b[0], dec)} - {round(supply_b[1], dec)}" if supply_b else "ফ্রেশ জোন নেই",
-        "demand_t": f"{round(demand_b[0], dec)} - {round(demand_b[1], dec)}" if demand_b else "ফ্রেশ জোন নেই",
+        "res_t": f"{round(res_b, dec)} - {round(res_b, dec)}",
+        "sup_t": f"{round(sup_b, dec)} - {round(sup_b, dec)}",
+        "supply_t": f"{round(supply_b, dec)} - {round(supply_b, dec)}" if supply_b else "ফ্রেশ জোন নেই",
+        "demand_t": f"{round(demand_b, dec)} - {round(demand_b, dec)}" if demand_b else "ফ্রেশ জোন নেই",
         "sig": sig, "active": active,
         "dir": direction, "entry": round(entry, dec), "sl": round(sl, dec), "tp": round(tp, dec)
     }
@@ -135,7 +133,6 @@ with tab1:
             if z["active"]: st.success(z["sig"])
             else: st.info(z["sig"])
 
-            # এন্ট্রি, স্টপ লস ও এক্সিট বক্স
             with st.container(border=True):
                 st.markdown(f"#### 🎯 ট্রেড সেটআপ ({z['dir']})")
                 t1, t2, t3 = st.columns(3)
@@ -145,14 +142,13 @@ with tab1:
             
             plot_df = df1h.iloc[-45:]
             fig = go.Figure(data=[go.Candlestick(x=plot_df.index, open=plot_df['Open'], high=plot_df['High'], low=plot_df['Low'], close=plot_df['Close'])])
-            fig.add_hrect(y0=z["res_b"][0], y1=z["res_b"][1], fillcolor="rgba(255,165,0,0.20)", line_color="orange", annotation_text="Resistance", annotation_position="top left")
-            fig.add_hrect(y0=z["sup_b"][0], y1=z["sup_b"][1], fillcolor="rgba(0,191,255,0.20)", line_color="deepskyblue", annotation_text="Support", annotation_position="bottom left")
+            fig.add_hrect(y0=z["res_b"], y1=z["res_b"], fillcolor="rgba(255,165,0,0.20)", line_color="orange", annotation_text="Resistance", annotation_position="top left")
+            fig.add_hrect(y0=z["sup_b"], y1=z["sup_b"], fillcolor="rgba(0,191,255,0.20)", line_color="deepskyblue", annotation_text="Support", annotation_position="bottom left")
             if z["supply_b"]:
-                fig.add_hrect(y0=z["supply_b"][0], y1=z["supply_b"][1], fillcolor="rgba(255,0,0,0.25)", line_color="red", annotation_text="Supply", annotation_position="top right")
+                fig.add_hrect(y0=z["supply_b"], y1=z["supply_b"], fillcolor="rgba(255,0,0,0.25)", line_color="red", annotation_text="Supply", annotation_position="top right")
             if z["demand_b"]:
-                fig.add_hrect(y0=z["demand_b"][0], y1=z["demand_b"][1], fillcolor="rgba(0,200,83,0.25)", line_color="green", annotation_text="Demand", annotation_position="bottom right")
+                fig.add_hrect(y0=z["demand_b"], y1=z["demand_b"], fillcolor="rgba(0,200,83,0.25)", line_color="green", annotation_text="Demand", annotation_position="bottom right")
             
-            # চার্টে Entry, SL ও Exit লাইন আঁকা
             fig.add_hline(y=z["entry"], line_dash="dash", line_color="#00E5FF", annotation_text=f"Entry: {z['entry']}", annotation_position="top left")
             fig.add_hline(y=z["sl"], line_dash="dot", line_color="#FF1744", annotation_text=f"SL: {z['sl']}", annotation_position="bottom left")
             fig.add_hline(y=z["tp"], line_dash="dash", line_color="#00E676", annotation_text=f"Exit/TP: {z['tp']}", annotation_position="top right")
@@ -179,11 +175,7 @@ with tab2:
             df = get_data(tk, "1mo", "1h")
             if not df.empty:
                 z = analyze_zones(df, dec)
-                rows.append({
-                    "Pair": name, "Price": z["price"], "Setup": z["dir"],
-                    "Entry": z["entry"], "SL": z["sl"], "Exit (TP)": z["tp"],
-                    "Signal": z["sig"]
-                })
+                rows.append({"Pair": name, "Price": z["price"], "Setup": z["dir"], "Entry": z["entry"], "SL": z["sl"], "Exit (TP)": z["tp"], "Signal": z["sig"]})
         st.dataframe(pd.DataFrame(rows), use_container_width=True, hide_index=True)
 
 with tab3:
@@ -204,4 +196,10 @@ with tab3:
             st.success("✅ সেভ হয়েছে!")
     if os.path.exists(j_file):
         df_j = pd.read_csv(j_file)
-        if not df_j.empty:
+        wins = len(df_j[df_j["Result"] == "Win ✅"])
+        total_t = max(len(df_j), 1)
+        m1, m2, m3 = st.columns(3)
+        m1.metric("ট্রেড", len(df_j))
+        m2.metric("উইন রেট", f"{(wins/total_t)*100:.1f}%")
+        m3.metric("নেট PnL", f"${df_j['PnL ($)'].sum():.2f}")
+        st.dataframe(df_j, use_container_width=True, hide_index=True)
