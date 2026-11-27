@@ -17,7 +17,7 @@ with st.container(border=True):
     st.markdown(f"**🕒 সময়:** {now_bd.strftime('%I:%M %p (BD)')} | " + ("🔥 **Overlap (NY Killzone)**" if 18<=hr<22 else (" | ".join(ses) if ses else "💤 অফ-সেশন")))
 
 pairs = {"EUR/USD": "EURUSD=X", "GBP/USD": "GBPUSD=X", "USD/JPY": "USDJPY=X", "AUD/USD": "AUDUSD=X", "GOLD": "GC=F", "ETH": "ETH-USD"}
-tfs = {"5M": ("2d", "5m"), "15M": ("5d", "15m"), "1H": ("1mo", "1h"), "4H": ("2mo", "4h")}
+tfs = {"5M": ("5d", "5m"), "15M": ("5d", "15m"), "1H": ("1mo", "1h"), "4H": ("2mo", "4h")}
 
 @st.cache_data(ttl=60)
 def get_df(sym, p, iv):
@@ -70,13 +70,14 @@ def analyze(df, dec):
         d, en, stp, tp = "RANGE 🟡", sup+buf, sup-buf*0.5, res-buf
     return {"p":round(c,dec), "res":(res-buf,res), "sup":(sup,sup+buf), "dem":(dl,dh) if dl else None, "sup_z":(sl,sh) if sl else None, "sig":sig, "dir":d, "en":round(en,dec), "sl":round(stp,dec), "tp":round(tp,dec)}
 
-def base_chart(df_slice, h=380):
+def make_candlestick_fig(df_slice, h=380):
+    x_labels = [str(idx) for idx in df_slice.index]
     fig = go.Figure(data=[go.Candlestick(
-        x=list(range(len(df_slice))),
-        open=df_slice['Open'].tolist(),
-        high=df_slice['High'].tolist(),
-        low=df_slice['Low'].tolist(),
-        close=df_slice['Close'].tolist(),
+        x=x_labels,
+        open=df_slice['Open'],
+        high=df_slice['High'],
+        low=df_slice['Low'],
+        close=df_slice['Close'],
         name="Price"
     )])
     fig.update_layout(
@@ -84,10 +85,11 @@ def base_chart(df_slice, h=380):
         height=h,
         margin=dict(l=5, r=5, t=25, b=5),
         template="plotly_dark",
+        xaxis_type="category",
         showlegend=False
     )
     fig.update_xaxes(showticklabels=False)
-    return fig
+    return fig, x_labels
 
 tab1, tab2 = st.tabs(["📊 প্রাইস অ্যাকশন ও জোন", "🧠 অ্যাডভান্সড SMC অ্যানালাইসিস"])
 
@@ -119,7 +121,7 @@ with tab1:
             t3.metric("Exit (TP)", z["tp"])
             
             pdf = df.iloc[-45:]
-            fig = base_chart(pdf, h=380)
+            fig, _ = make_candlestick_fig(pdf, h=380)
             fig.add_hrect(y0=z["res"], y1=z["res"], fillcolor="orange", opacity=0.2, annotation_text="Res")
             fig.add_hrect(y0=z["sup"], y1=z["sup"], fillcolor="deepskyblue", opacity=0.2, annotation_text="Sup")
             if z["dem"]: fig.add_hrect(y0=z["dem"], y1=z["dem"], fillcolor="green", opacity=0.25, annotation_text="Demand")
@@ -135,12 +137,15 @@ with tab1:
 
 # ==================== TAB 2: ADVANCED VISUAL SMC ====================
 with tab2:
+    if "smc_active" not in st.session_state:
+        st.session_state.smc_active = False
+
     s1, s2 = st.columns(2)
     sp = s1.selectbox("পেয়ার", list(pairs.keys()), key="p2")
     stf = s2.selectbox("টাইমফ্রেম", list(tfs.keys()), index=2, key="tf2")
     
     smc_tool = st.selectbox(
-        "SMC উপাদান নির্বাচন করুন (ছবি ও অ্যানালাইসিস):",
+        "SMC উপাদান নির্বাচন করুন:",
         [
             "১. ফেয়ার ভ্যালু গ্যাপ (Fair Value Gap & 50% CE)",
             "২. অর্ডার ব্লক (Institutional Order Blocks)",
@@ -152,23 +157,28 @@ with tab2:
     )
     
     if st.button("⚡ চার্ট ও SMC অ্যানালাইসিস দেখুন", use_container_width=True, type="primary", key="b2"):
+        st.session_state.smc_active = True
+
+    if st.session_state.smc_active:
         tk = pairs[sp]
         dec = 2 if tk in ["GC=F","USDJPY=X","ETH-USD"] else 5
         with st.spinner("SMC চার্ট ও জোন তৈরি হচ্ছে..."):
             dfs = get_df(tk, *tfs[stf])
         
         if len(dfs) >= 35:
-            ps = dfs.iloc[-45:].copy().reset_index(drop=True)
+            ps = dfs.iloc[-45:].copy()
+            fig, x_labels = make_candlestick_fig(ps, h=390)
             c = float(ps['Close'].iloc[-1])
             mid = len(ps) // 2
             
-            h1_idx = int(ps.iloc[:mid]['High'].idxmax())
-            h2_idx = int(ps.iloc[mid:-1]['High'].idxmax())
-            l1_idx = int(ps.iloc[:mid]['Low'].idxmin())
-            l2_idx = int(ps.iloc[mid:-1]['Low'].idxmin())
+            # পজিশনাল ইনডেক্স বের করা (iloc ভিত্তিক)
+            h1_pos = int(ps.iloc[:mid]['High'].values.argmax())
+            h2_pos = mid + int(ps.iloc[mid:-1]['High'].values.argmax())
+            l1_pos = int(ps.iloc[:mid]['Low'].values.argmin())
+            l2_pos = mid + int(ps.iloc[mid:-1]['Low'].values.argmin())
             
-            h1, h2 = float(ps['High'].iloc[h1_idx]), float(ps['High'].iloc[h2_idx])
-            l1, l2 = float(ps['Low'].iloc[l1_idx]), float(ps['Low'].iloc[l2_idx])
+            h1, h2 = float(ps['High'].iloc[h1_pos]), float(ps['High'].iloc[h2_pos])
+            l1, l2 = float(ps['Low'].iloc[l1_pos]), float(ps['Low'].iloc[l2_pos])
             
             h_lbl = "HH" if h2 > h1 else "LH"
             l_lbl = "HL" if l2 > l1 else "LL"
@@ -194,9 +204,3 @@ with tab2:
                 b_fvg_status = "N/A"
                 b_ce = None
                 if bfvg_l and bfvg_h and bfvg_idx is not None:
-                    b_ce = round((bfvg_l + bfvg_h) / 2, dec)
-                    sub_low = float(ps.iloc[bfvg_idx+1:]['Low'].min()) if bfvg_idx+1 < len(ps) else c
-                    b_fvg_status = "✅ Unmitigated (Active)" if sub_low > bfvg_l else "⚪ Mitigated (Filled)"
-
-                s_fvg_status = "N/A"
-                s_ce = None
