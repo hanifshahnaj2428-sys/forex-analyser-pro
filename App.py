@@ -92,13 +92,41 @@ with tab1:
 with tab2:
     s1, s2 = st.columns(2)
     sp, stf = s1.selectbox("পেয়ার", list(pairs.keys()), key="sp"), s2.selectbox("টাইমফ্রেম", list(tfs.keys()), index=2, key="stf")
-    if st.button("⚡ SMC ও FVG দেখুন", use_container_width=True, type="primary"):
+    if st.button("⚡ ফুল SMC অ্যানালাইসিস দেখুন", use_container_width=True, type="primary"):
         tk = pairs[sp]
         dec = 2 if tk in ["GC=F","USDJPY=X","ETH-USD"] else 5
         dfs = get_df(tk, *tfs[stf])
-        if not dfs.empty:
-            c, sh, sl = float(dfs['Close'].iloc[-1]), float(dfs.iloc[-25:-3]['High'].max()), float(dfs.iloc[-25:-3]['Low'].min())
-            st.success(f"**BOS / CHoCH:** {'🟢 Bullish Break' if c>sh else ('🔴 Bearish Break' if c<sl else '🟡 Internal Range')} ({round(sl,dec)} - {round(sh,dec)})")
+        if len(dfs) >= 40:
+            ps = dfs.iloc[-40:].copy()
+            c = float(ps['Close'].iloc[-1])
+            
+            # ১. Market Structure (HH, HL, LH, LL) ও BOS / CHoCH
+            h1, h2 = float(ps.iloc[-40:-20]['High'].max()), float(ps.iloc[-20:-2]['High'].max())
+            l1, l2 = float(ps.iloc[-40:-20]['Low'].min()), float(ps.iloc[-20:-2]['Low'].min())
+            idx_h1, idx_h2 = ps.iloc[-40:-20]['High'].idxmax(), ps.iloc[-20:-2]['High'].idxmax()
+            idx_l1, idx_l2 = ps.iloc[-40:-20]['Low'].idxmin(), ps.iloc[-20:-2]['Low'].idxmin()
+
+            h_lbl = "HH" if h2 > h1 else "LH"
+            l_lbl = "HL" if l2 > l1 else "LL"
+            ms_text = f"Uptrend ({h_lbl} & {l_lbl})" if (h2 > h1 and l2 > l1) else (f"Downtrend ({h_lbl} & {l_lbl})" if (h2 < h1 and l2 < l1) else f"Transition ({h_lbl} / {l_lbl})")
+
+            if c > h2:
+                bos_choch = f"🚀 {'BOS (Trend Continuation)' if h2 > h1 else 'CHoCH (Reversal Signal)'} @ {round(h2, dec)}"
+            elif c < l2:
+                bos_choch = f"🔻 {'BOS (Trend Continuation)' if l2 < l1 else 'CHoCH (Reversal Signal)'} @ {round(l2, dec)}"
+            else:
+                bos_choch = f"🟡 Ranging Structure ({round(l2, dec)} - {round(h2, dec)})"
+
+            # ২. Premium & Discount Zone (50% Equilibrium)
+            sw_hi, sw_lo = max(h1, h2), min(l1, l2)
+            eq = (sw_hi + sw_lo) / 2
+            pd_zone = "🔴 Premium Zone (Sell Area)" if c > eq else "🟢 Discount Zone (Buy Area)"
+
+            # ৩. Liquidity (BSL & SSL)
+            bsl = round(sw_hi, dec)
+            ssl = round(sw_lo, dec)
+
+            # ৪. FVG & Order Block (OB)
             bfvg = sfvg = bob = sob = None
             for i in range(len(dfs)-2, max(len(dfs)-25, 2), -1):
                 if dfs['Low'].iloc[i] > dfs['High'].iloc[i-2] and not bfvg:
@@ -107,41 +135,28 @@ with tab2:
                 if dfs['High'].iloc[i] < dfs['Low'].iloc[i-2] and not sfvg:
                     sfvg = (round(float(dfs['High'].iloc[i]),dec), round(float(dfs['Low'].iloc[i-2]),dec))
                     sob = (round(float(dfs['Low'].iloc[i-2]),dec), round(float(dfs['High'].iloc[i-2]),dec))
-            c1, c2 = st.columns(2)
-            c1.info(f"**🟢 Bull OB:** {bob}\n\n**🟢 Bull FVG:** {bfvg}")
-            c2.error(f"**🔴 Bear OB:** {sob}\n\n**🔴 Bear FVG:** {sfvg}")
-            ps = dfs.iloc[-40:]
-            figs = go.Figure(data=[go.Candlestick(x=ps.index, open=ps['Open'], high=ps['High'], low=ps['Low'], close=ps['Close'])])
-            if bfvg: figs.add_hrect(y0=bfvg, y1=bfvg, fillcolor="lime", opacity=0.25, annotation_text="Bull FVG")
-            if sfvg: figs.add_hrect(y0=sfvg, y1=sfvg, fillcolor="red", opacity=0.25, annotation_text="Bear FVG")
-            figs.update_layout(xaxis_rangeslider_visible=False, height=350, margin=dict(l=5,r=5,t=20,b=5), template="plotly_dark", xaxis_type="category")
-            figs.update_xaxes(showticklabels=False)
-            st.plotly_chart(figs, use_container_width=True)
 
-with tab3:
-    sctf = st.selectbox("স্ক্যান টাইমফ্রেম", list(tfs.keys()), index=2, key="sctf")
-    if st.button("🔄 অল-পেয়ার স্ক্যান করুন", use_container_width=True, type="primary"):
-        rows = []
-        for nm, tk in pairs.items():
-            dec = 2 if tk in ["GC=F","USDJPY=X","ETH-USD"] else 5
-            df = get_df(tk, *tfs[sctf])
-            if not df.empty:
-                z = analyze(df, dec)
-                rows.append({"Pair":nm, "Price":z["p"], "Setup":z["dir"], "Entry":z["en"], "SL":z["sl"], "Exit":z["tp"]})
-        st.dataframe(pd.DataFrame(rows), use_container_width=True, hide_index=True)
+            buf = (sw_hi - sw_lo) * 0.05
+            if c <= eq and bob:
+                s_dir, s_en, s_sl = "BUY (Discount OB) 🟢", bob, round(bob - buf*0.5, dec)
+                s_tp = round(s_en + max(abs(s_en - s_sl), buf)*2, dec)
+            elif c > eq and sob:
+                s_dir, s_en, s_sl = "SELL (Premium OB) 🔴", sob, round(sob + buf*0.5, dec)
+                s_tp = round(s_en - max(abs(s_sl - s_en), buf)*2, dec)
+            else:
+                s_dir, s_en, s_sl, s_tp = ("BUY 🟢", round(ssl+buf, dec), round(ssl-buf*0.5, dec), round(bsl, dec)) if c <= eq else ("SELL 🔴", round(bsl-buf, dec), round(bsl+buf*0.5, dec), round(ssl, dec))
 
-with tab4:
-    jf = "journal.csv"
-    with st.form("jf", clear_on_submit=True):
-        c1, c2 = st.columns(2)
-        jp, jt = c1.selectbox("পেয়ার", list(pairs.keys())), c2.selectbox("পজিশন", ["BUY 🟢", "SELL 🔴"])
-        c3, c4 = st.columns(2)
-        jr, jpnl = c3.selectbox("রেজাল্ট", ["Win ✅", "Loss ❌"]), c4.number_input("PnL ($)", value=0.0)
-        if st.form_submit_button("💾 সেভ করুন", use_container_width=True):
-            row = pd.DataFrame([{"Time":now_bd.strftime("%d-%b %I:%M%p"), "Pair":jp, "Type":jt, "Result":jr, "PnL":jpnl}])
-            pd.concat([row, pd.read_csv(jf) if os.path.exists(jf) else pd.DataFrame()], ignore_index=True).to_csv(jf, index=False)
-            st.success("✅ সেভ হয়েছে!")
-    if os.path.exists(jf):
-        df_j = pd.read_csv(jf)
-        st.metric("মোট PnL ($)", f"${df_j['PnL'].sum():.2f}")
-        st.dataframe(df_j, use_container_width=True, hide_index=True)
+            st.info(f"**Structure:** {ms_text} | **Signal:** {bos_choch}")
+            m1, m2 = st.columns(2)
+            m1.metric("বর্তমান জোন (50% EQ)", pd_zone)
+            m2.metric("Liquidity (BSL / SSL)", f"{bsl} / {ssl}")
+
+            t1, t2, t3 = st.columns(3)
+            t1.metric(f"SMC Entry ({s_dir})", s_en); t2.metric("Stop Loss", s_sl); t3.metric("Exit (TP)", s_tp)
+
+            # SMC চার্ট ভিজ্যুয়ালাইজেশন
+            figs = go.Figure(data=[go.Candlestick(x=ps.index, open=ps['Open'], high=ps['High'], low=ps['Low'], close=ps['Close'], name="Price")])
+            
+            # Premium & Discount ব্যাকগ্রাউন্ড
+            figs.add_hrect(y0=eq, y1=sw_hi, fillcolor="rgba(255,82,82,0.08)", line_width=0, annotation_text="PREMIUM (Sell)", annotation_position="top right")
+            figs.add_hrect(y0=sw_lo, y1=eq, fillcolor="rgba(0,230,118,0.08)", line_width=0, annotation_text="DISCOUNT (Buy)", annotation_position="bottom right")
