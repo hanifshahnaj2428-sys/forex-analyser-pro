@@ -138,13 +138,20 @@ with tab2:
 
             buf = (sw_hi - sw_lo) * 0.05
             if c <= eq and bob:
-                s_dir, s_en, s_sl = "BUY (Discount OB) 🟢", bob, round(bob - buf*0.5, dec)
+                s_dir = "BUY (Discount OB) 🟢"
+                s_en = bob
+                s_sl = round(bob - buf*0.5, dec)
                 s_tp = round(s_en + max(abs(s_en - s_sl), buf)*2, dec)
             elif c > eq and sob:
-                s_dir, s_en, s_sl = "SELL (Premium OB) 🔴", sob, round(sob + buf*0.5, dec)
+                s_dir = "SELL (Premium OB) 🔴"
+                s_en = sob
+                s_sl = round(sob + buf*0.5, dec)
                 s_tp = round(s_en - max(abs(s_sl - s_en), buf)*2, dec)
             else:
-                s_dir, s_en, s_sl, s_tp = ("BUY 🟢", round(ssl+buf, dec), round(ssl-buf*0.5, dec), round(bsl, dec)) if c <= eq else ("SELL 🔴", round(bsl-buf, dec), round(bsl+buf*0.5, dec), round(ssl, dec))
+                if c <= eq:
+                    s_dir, s_en, s_sl, s_tp = "BUY 🟢", round(ssl+buf, dec), round(ssl-buf*0.5, dec), round(bsl, dec)
+                else:
+                    s_dir, s_en, s_sl, s_tp = "SELL 🔴", round(bsl-buf, dec), round(bsl+buf*0.5, dec), round(ssl, dec)
 
             st.info(f"**Structure:** {ms_text} | **Signal:** {bos_choch}")
             m1, m2 = st.columns(2)
@@ -157,6 +164,4 @@ with tab2:
             # SMC চার্ট ভিজ্যুয়ালাইজেশন
             figs = go.Figure(data=[go.Candlestick(x=ps.index, open=ps['Open'], high=ps['High'], low=ps['Low'], close=ps['Close'], name="Price")])
             
-            # Premium & Discount ব্যাকগ্রাউন্ড
             figs.add_hrect(y0=eq, y1=sw_hi, fillcolor="rgba(255,82,82,0.08)", line_width=0, annotation_text="PREMIUM (Sell)", annotation_position="top right")
-            figs.add_hrect(y0=sw_lo, y1=eq, fillcolor="rgba(0,230,118,0.08)", line_width=0, annotation_text="DISCOUNT (Buy)", annotation_position="bottom right")
