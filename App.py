@@ -53,18 +53,63 @@ def get_rsi(df):
 
 def make_fig(df_s, h=400):
     xl = [str(i) for i in df_s.index]
-    fig = go.Figure(data=[go.Candlestick(x=xl, open=df_s['Open'].tolist(), high=df_s['High'].tolist(), low=df_s['Low'].tolist(), close=df_s['Close'].tolist(), name="Price")])
-    fig.update_layout(xaxis_rangeslider_visible=False, height=h, margin=dict(l=5, r=5, t=30, b=5), template="plotly_dark", xaxis_type="category", showlegend=False)
+    fig = go.Figure(data=[go.Candlestick(
+        x=xl,
+        open=df_s['Open'].tolist(),
+        high=df_s['High'].tolist(),
+        low=df_s['Low'].tolist(),
+        close=df_s['Close'].tolist(),
+        name="Price"
+    )])
+    fig.update_layout(
+        xaxis_rangeslider_visible=False,
+        height=h,
+        autosize=True,
+        margin=dict(l=10, r=10, t=30, b=10),
+        template="plotly_dark",
+        xaxis_type="category",
+        showlegend=False
+    )
     fig.update_xaxes(showticklabels=False)
     return fig, xl
 
 def draw_box(fig, x0, x1, y0, y1, rgba, bcol, lbl):
-    fig.add_trace(go.Scatter(x=[x0, x1, x1, x0, x0], y=[y0, y0, y1, y1, y0], fill="toself", fillcolor=rgba, line=dict(color=bcol, width=1.5), mode="lines", hoverinfo="skip"))
-    fig.add_annotation(x=x1, y=(y0+y1)/2, text=f"<b>{lbl}</b>", showarrow=False, xanchor="right", font=dict(color="white", size=11), bgcolor=bcol, borderpad=3)
+    fig.add_trace(go.Scatter(
+        x=[x0, x1, x1, x0, x0],
+        y=[y0, y0, y1, y1, y0],
+        fill="toself",
+        fillcolor=rgba,
+        line=dict(color=bcol, width=1.5),
+        mode="lines",
+        hoverinfo="skip"
+    ))
+    fig.add_annotation(
+        x=x1,
+        y=(y0+y1)/2,
+        text=f"<b>{lbl}</b>",
+        showarrow=False,
+        xanchor="right",
+        font=dict(color="white", size=11),
+        bgcolor=bcol,
+        borderpad=3
+    )
 
 def draw_line(fig, x0, x1, yv, col, lbl, dsh="dash"):
-    fig.add_trace(go.Scatter(x=[x0, x1], y=[yv, yv], mode="lines", line=dict(color=col, width=1.8, dash=dsh)))
-    fig.add_annotation(x=x0, y=yv, text=f"<b>{lbl}</b>", showarrow=False, xanchor="left", yshift=11, font=dict(color=col, size=11))
+    fig.add_trace(go.Scatter(
+        x=[x0, x1],
+        y=[yv, yv],
+        mode="lines",
+        line=dict(color=col, width=1.8, dash=dsh)
+    ))
+    fig.add_annotation(
+        x=x0,
+        y=yv,
+        text=f"<b>{lbl}</b>",
+        showarrow=False,
+        xanchor="left",
+        yshift=11,
+        font=dict(color=col, size=11)
+    )
 
 tab1, tab2 = st.tabs(["📊 প্রাইস অ্যাকশন ও জোন", "🧠 অ্যাডভান্সড SMC অ্যানালাইসিস"])
 
@@ -98,11 +143,11 @@ with tab1:
             t2.metric("Stop Loss", round(stp, dec))
             t3.metric("Exit (TP)", round(tp, dec))
             fig, xl = make_fig(df.iloc[-45:], 380)
-            draw_box(fig, xl[0], xl[-1], res-buf, res, "rgba(255,165,0,0.22)", "#FFA500", "Resistance")
-            draw_box(fig, xl[0], xl[-1], sup, sup+buf, "rgba(0,191,255,0.22)", "#00BFFF", "Support")
-            draw_line(fig, xl[0], xl[-1], en, "#00FFFF", f"Entry: {round(en,dec)}")
-            draw_line(fig, xl[0], xl[-1], stp, "#FF4B4B", f"SL: {round(stp,dec)}", "dot")
-            draw_line(fig, xl[0], xl[-1], tp, "#00FF7F", f"TP: {round(tp,dec)}")
+            draw_box(fig, xl, xl[-1], res-buf, res, "rgba(255,165,0,0.22)", "#FFA500", "Resistance")
+            draw_box(fig, xl, xl[-1], sup, sup+buf, "rgba(0,191,255,0.22)", "#00BFFF", "Support")
+            draw_line(fig, xl, xl[-1], en, "#00FFFF", f"Entry: {round(en,dec)}")
+            draw_line(fig, xl, xl[-1], stp, "#FF4B4B", f"SL: {round(stp,dec)}", "dot")
+            draw_line(fig, xl, xl[-1], tp, "#00FF7F", f"TP: {round(tp,dec)}")
             st.plotly_chart(fig, use_container_width=True, key="chart_tab1")
         else:
             st.warning("⚠️ ডেটা লোড হয়নি।")
@@ -167,7 +212,3 @@ with tab2:
                 o1.metric("Bullish OB", f"{bob_l} - {bob_h}")
                 o2.metric("Bearish OB", f"{sob_l} - {sob_h}")
                 draw_box(fig, xl[bob_idx], xl[-1], bob_l, bob_h, "rgba(0,229,255,0.30)", "#00B8D4", "Bullish OB")
-                draw_box(fig, xl[sob_idx], xl[-1], sob_l, sob_h, "rgba(213,0,249,0.30)", "#AA00FF", "Bearish OB")
-            elif "BOS" in tool:
-                h_lbl = "HH" if h2 > h1 else "LH"
-                l_lbl = "HL" if l2 > l1 else "LL"
