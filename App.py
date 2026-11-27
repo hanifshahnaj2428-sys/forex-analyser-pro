@@ -71,7 +71,6 @@ def make_fig(df_s, h=400):
     fig.update_xaxes(showticklabels=False)
     return fig, xl
 
-# ক্যান্ডেলস্টিকের ওপর ১০০% দৃশ্যমান জোন বক্স আঁকার ফাংশন
 def draw_box(fig, x_start, x_end, y_low, y_high, fill_rgba, border_color, label):
     fig.add_trace(go.Scatter(
         x=[x_start, x_end, x_end, x_start, x_start],
@@ -98,7 +97,7 @@ def draw_line(fig, x_start, x_end, y_val, color, label, dash="dash"):
         x=[x_start, x_end],
         y=[y_val, y_val],
         mode="lines",
-        line=dict(color=color, width=1.5, dash=dash)
+        line=dict(color=color, width=1.8, dash=dash)
     ))
     fig.add_annotation(
         x=x_start,
@@ -106,7 +105,7 @@ def draw_line(fig, x_start, x_end, y_val, color, label, dash="dash"):
         text=f"<b>{label}</b>",
         showarrow=False,
         xanchor="left",
-        yshift=10,
+        yshift=11,
         font=dict(color=color, size=11)
     )
 
@@ -192,6 +191,7 @@ with tab2:
             sw_hi, sw_lo = max(h1, h2), min(l1, l2)
             rng, eq = max(sw_hi - sw_lo, 1e-6), (sw_hi + sw_lo) / 2
             
+            # FVG এবং Order Block খোঁজা
             bf_l = bf_h = sf_l = sf_h = None
             bf_idx = sf_idx = 0
             bob_l = bob_h = sob_l = sob_h = None
@@ -209,19 +209,21 @@ with tab2:
                     sob_l, sob_h = round(float(ps['Low'].iloc[i-2]), dec), round(float(ps['High'].iloc[i-2]), dec)
                     sob_idx = i - 2
 
+            # যদি কোনো গ্যাপ না থাকে, তবে সুইং পয়েন্ট থেকে অটো OB সেট করা
+            if bob_l is None:
+                bob_l = round(float(ps['Low'].iloc[l2_p]), dec)
+                bob_h = round(max(float(ps['Open'].iloc[l2_p]), float(ps['Close'].iloc[l2_p])), dec)
+                bob_idx = l2_p
+            if sob_l is None:
+                sob_h = round(float(ps['High'].iloc[h2_p]), dec)
+                sob_l = round(min(float(ps['Open'].iloc[h2_p]), float(ps['Close'].iloc[h2_p])), dec)
+                sob_idx = h2_p
+
             if "FVG" in tool:
                 f1, f2 = st.columns(2)
-                f1.metric("Bullish FVG (Buy Gap)", f"{bf_l} - {bf_h}" if bf_l else "পাওয়া যায়নি")
-                f2.metric("Bearish FVG (Sell Gap)", f"{sf_l} - {sf_h}" if sf_l else "পাওয়া যায়নি")
+                f1.metric("Bullish FVG (Buy Gap)", f"{bf_l} - {bf_h}" if bf_l else "সক্রিয় গ্যাপ নেই")
+                f2.metric("Bearish FVG (Sell Gap)", f"{sf_l} - {sf_h}" if sf_l else "সক্রিয় গ্যাপ নেই")
                 if bf_l:
                     draw_box(fig, xl[bf_idx], xl[-1], bf_l, bf_h, "rgba(0, 255, 127, 0.28)", "#00C853", "Bullish FVG")
                     draw_line(fig, xl[bf_idx], xl[-1], round((bf_l+bf_h)/2, dec), "#00FF7F", "50% CE", "dot")
                 if sf_l:
-                    draw_box(fig, xl[sf_idx], xl[-1], sf_l, sf_h, "rgba(255, 75, 75, 0.28)", "#FF1744", "Bearish FVG")
-                    draw_line(fig, xl[sf_idx], xl[-1], round((sf_l+sf_h)/2, dec), "#FF5252", "50% CE", "dot")
-                if not bf_l and not sf_l:
-                    st.info("এই ৪৫টি ক্যান্ডেলের ভেতরে কোনো স্পষ্ট FVG গ্যাপ তৈরি হয়নি। অন্য টাইমফ্রেম চেক করুন।")
-
-            elif "OB" in tool:
-                o1, o2 = st.columns(2)
-                o1.metric("Bullish OB (Demand)", f"{bob_l} - {bob_h}" if bob_l else "পাওয়া যায়নি")
