@@ -99,8 +99,9 @@ with tab1:
     if st.button("🔍 চার্ট অ্যানালাইসিস দেখুন", use_container_width=True, type="primary", key="b1"):
         tk = pairs[pn]
         dec = 2 if tk in ["GC=F","USDJPY=X","ETH-USD"] else 5
-        df = get_df(tk, *tfs[tfl])
-        dfd = get_df(tk, "5d", "1d")
+        with st.spinner("চার্ট লোড হচ্ছে..."):
+            df = get_df(tk, *tfs[tfl])
+            dfd = get_df(tk, "5d", "1d")
         pdh = round(float(dfd['High'].iloc[-2]), dec) if len(dfd)>=2 else None
         pdl = round(float(dfd['Low'].iloc[-2]), dec) if len(dfd)>=2 else None
         if len(df) >= 20:
@@ -150,57 +151,52 @@ with tab2:
         key="smc_tool"
     )
     
-    tk = pairs[sp]
-    dec = 2 if tk in ["GC=F","USDJPY=X","ETH-USD"] else 5
-    dfs = get_df(tk, *tfs[stf])
-    
-    if len(dfs) >= 35:
-        ps = dfs.iloc[-45:].copy().reset_index(drop=True)
-        c = float(ps['Close'].iloc[-1])
-        mid = len(ps) // 2
+    if st.button("⚡ চার্ট ও SMC অ্যানালাইসিস দেখুন", use_container_width=True, type="primary", key="b2"):
+        tk = pairs[sp]
+        dec = 2 if tk in ["GC=F","USDJPY=X","ETH-USD"] else 5
+        with st.spinner("SMC চার্ট ও জোন তৈরি হচ্ছে..."):
+            dfs = get_df(tk, *tfs[stf])
         
-        h1_idx = int(ps.iloc[:mid]['High'].idxmax())
-        h2_idx = int(ps.iloc[mid:-1]['High'].idxmax())
-        l1_idx = int(ps.iloc[:mid]['Low'].idxmin())
-        l2_idx = int(ps.iloc[mid:-1]['Low'].idxmin())
-        
-        h1, h2 = float(ps['High'].iloc[h1_idx]), float(ps['High'].iloc[h2_idx])
-        l1, l2 = float(ps['Low'].iloc[l1_idx]), float(ps['Low'].iloc[l2_idx])
-        
-        h_lbl = "HH" if h2 > h1 else "LH"
-        l_lbl = "HL" if l2 > l1 else "LL"
-        sw_hi, sw_lo = max(h1, h2), min(l1, l2)
-        rng = sw_hi - sw_lo
-        eq = (sw_hi + sw_lo) / 2
-        
-        # FVG & OB খোঁজা
-        bfvg_l = bfvg_h = sfvg_l = sfvg_h = None
-        bfvg_idx = sfvg_idx = None
-        bob_l = bob_h = sob_l = sob_h = None
-        
-        for i in range(len(ps)-2, 2, -1):
-            if float(ps['Low'].iloc[i]) > float(ps['High'].iloc[i-2]) and bfvg_l is None:
-                bfvg_l, bfvg_h = round(float(ps['High'].iloc[i-2]),dec), round(float(ps['Low'].iloc[i]),dec)
-                bfvg_idx = i
-                bob_l, bob_h = round(float(ps['Low'].iloc[i-2]),dec), round(float(ps['High'].iloc[i-2]),dec)
-            if float(ps['High'].iloc[i]) < float(ps['Low'].iloc[i-2]) and sfvg_l is None:
-                sfvg_l, sfvg_h = round(float(ps['High'].iloc[i]),dec), round(float(ps['Low'].iloc[i-2]),dec)
-                sfvg_idx = i
-                sob_l, sob_h = round(float(ps['Low'].iloc[i-2]),dec), round(float(ps['High'].iloc[i-2]),dec)
+        if len(dfs) >= 35:
+            ps = dfs.iloc[-45:].copy().reset_index(drop=True)
+            c = float(ps['Close'].iloc[-1])
+            mid = len(ps) // 2
+            
+            h1_idx = int(ps.iloc[:mid]['High'].idxmax())
+            h2_idx = int(ps.iloc[mid:-1]['High'].idxmax())
+            l1_idx = int(ps.iloc[:mid]['Low'].idxmin())
+            l2_idx = int(ps.iloc[mid:-1]['Low'].idxmin())
+            
+            h1, h2 = float(ps['High'].iloc[h1_idx]), float(ps['High'].iloc[h2_idx])
+            l1, l2 = float(ps['Low'].iloc[l1_idx]), float(ps['Low'].iloc[l2_idx])
+            
+            h_lbl = "HH" if h2 > h1 else "LH"
+            l_lbl = "HL" if l2 > l1 else "LL"
+            sw_hi, sw_lo = max(h1, h2), min(l1, l2)
+            rng = sw_hi - sw_lo
+            eq = (sw_hi + sw_lo) / 2
+            
+            bfvg_l = bfvg_h = sfvg_l = sfvg_h = None
+            bfvg_idx = sfvg_idx = None
+            bob_l = bob_h = sob_l = sob_h = None
+            
+            for i in range(len(ps)-2, 2, -1):
+                if float(ps['Low'].iloc[i]) > float(ps['High'].iloc[i-2]) and bfvg_l is None:
+                    bfvg_l, bfvg_h = round(float(ps['High'].iloc[i-2]),dec), round(float(ps['Low'].iloc[i]),dec)
+                    bfvg_idx = i
+                    bob_l, bob_h = round(float(ps['Low'].iloc[i-2]),dec), round(float(ps['High'].iloc[i-2]),dec)
+                if float(ps['High'].iloc[i]) < float(ps['Low'].iloc[i-2]) and sfvg_l is None:
+                    sfvg_l, sfvg_h = round(float(ps['High'].iloc[i]),dec), round(float(ps['Low'].iloc[i-2]),dec)
+                    sfvg_idx = i
+                    sob_l, sob_h = round(float(ps['Low'].iloc[i-2]),dec), round(float(ps['High'].iloc[i-2]),dec)
 
-        # ১. ফেয়ার ভ্যালু গ্যাপ
-        if "ফেয়ার ভ্যালু গ্যাপ" in smc_tool:
-            b_fvg_status = "N/A"
-            b_ce = None
-            if bfvg_l and bfvg_h and bfvg_idx is not None:
-                b_ce = round((bfvg_l + bfvg_h) / 2, dec)
-                sub_low = float(ps.iloc[bfvg_idx+1:]['Low'].min()) if bfvg_idx+1 < len(ps) else c
-                b_fvg_status = "✅ Unmitigated (Active)" if sub_low > bfvg_l else "⚪ Mitigated (Filled)"
+            if "ফেয়ার ভ্যালু গ্যাপ" in smc_tool:
+                b_fvg_status = "N/A"
+                b_ce = None
+                if bfvg_l and bfvg_h and bfvg_idx is not None:
+                    b_ce = round((bfvg_l + bfvg_h) / 2, dec)
+                    sub_low = float(ps.iloc[bfvg_idx+1:]['Low'].min()) if bfvg_idx+1 < len(ps) else c
+                    b_fvg_status = "✅ Unmitigated (Active)" if sub_low > bfvg_l else "⚪ Mitigated (Filled)"
 
-            s_fvg_status = "N/A"
-            s_ce = None
-            if sfvg_l and sfvg_h and sfvg_idx is not None:
-                s_ce = round((sfvg_l + sfvg_h) / 2, dec)
-                sub_high = float(ps.iloc[sfvg_idx+1:]['High'].max()) if sfvg_idx+1 < len(ps) else c
-                s_fvg_status = "✅ Unmitigated (Active)" if sub_high < sfvg_h else "⚪ Mitigated (Filled)"
-
+                s_fvg_status = "N/A"
+                s_ce = None
