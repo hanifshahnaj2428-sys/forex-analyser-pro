@@ -70,13 +70,30 @@ def analyze(df, dec):
         d, en, stp, tp = "RANGE 🟡", sup+buf, sup-buf*0.5, res-buf
     return {"p":round(c,dec), "res":(res-buf,res), "sup":(sup,sup+buf), "dem":(dl,dh) if dl else None, "sup_z":(sl,sh) if sl else None, "sig":sig, "dir":d, "en":round(en,dec), "sl":round(stp,dec), "tp":round(tp,dec)}
 
-tab1, tab2, tab3 = st.tabs(["📊 চার্ট ও জোন", "🧠 SMC অ্যানালাইসিস", "🧭 MTF ও সেশন"])
+def base_chart(df_slice, h=300):
+    fig = go.Figure(data=[go.Candlestick(
+        x=list(range(len(df_slice))),
+        open=df_slice['Open'], high=df_slice['High'], low=df_slice['Low'], close=df_slice['Close'],
+        name="Price"
+    )])
+    fig.update_layout(
+        xaxis_rangeslider_visible=False,
+        height=h,
+        margin=dict(l=5, r=5, t=25, b=5),
+        template="plotly_dark",
+        showlegend=False
+    )
+    fig.update_xaxes(showticklabels=False)
+    return fig
 
+tab1, tab2 = st.tabs(["📊 প্রাইস অ্যাকশন ও জোন", "🧠 অ্যাডভান্সড SMC অ্যানালাইসিস"])
+
+# ==================== TAB 1 ====================
 with tab1:
     c1, c2 = st.columns(2)
     pn = c1.selectbox("পেয়ার", list(pairs.keys()), key="p1")
     tfl = c2.selectbox("টাইমফ্রেম", list(tfs.keys()), index=2, key="tf1")
-    if st.button("🔍 অ্যানালাইসিস দেখুন", use_container_width=True, type="primary", key="b1"):
+    if st.button("🔍 চার্ট অ্যানালাইসিস দেখুন", use_container_width=True, type="primary", key="b1"):
         tk = pairs[pn]
         dec = 2 if tk in ["GC=F","USDJPY=X","ETH-USD"] else 5
         df = get_df(tk, *tfs[tfl])
@@ -98,74 +115,79 @@ with tab1:
             t3.metric("Exit (TP)", z["tp"])
             
             pdf = df.iloc[-45:]
-            fig = go.Figure(data=[go.Candlestick(x=pdf.index, open=pdf['Open'], high=pdf['High'], low=pdf['Low'], close=pdf['Close'])])
-            fig.add_hrect(y0=z["res"], y1=z["res"], fillcolor="orange", opacity=0.2, annotation_text="Res")
-            fig.add_hrect(y0=z["sup"], y1=z["sup"], fillcolor="deepskyblue", opacity=0.2, annotation_text="Sup")
-            if z["dem"]: fig.add_hrect(y0=z["dem"], y1=z["dem"], fillcolor="green", opacity=0.25, annotation_text="Demand")
-            if z["sup_z"]: fig.add_hrect(y0=z["sup_z"], y1=z["sup_z"], fillcolor="red", opacity=0.25, annotation_text="Supply")
+            fig = base_chart(pdf, h=380)
+            fig.add_hrect(y0=z["res"][0], y1=z["res"][1], fillcolor="orange", opacity=0.2, annotation_text="Res")
+            fig.add_hrect(y0=z["sup"][0], y1=z["sup"][1], fillcolor="deepskyblue", opacity=0.2, annotation_text="Sup")
+            if z["dem"]: fig.add_hrect(y0=z["dem"][0], y1=z["dem"][1], fillcolor="green", opacity=0.25, annotation_text="Demand")
+            if z["sup_z"]: fig.add_hrect(y0=z["sup_z"][0], y1=z["sup_z"][1], fillcolor="red", opacity=0.25, annotation_text="Supply")
             fig.add_hline(y=z["en"], line_dash="dash", line_color="cyan", annotation_text="Entry")
             fig.add_hline(y=z["sl"], line_dash="dot", line_color="red", annotation_text="SL")
             fig.add_hline(y=z["tp"], line_dash="dash", line_color="lime", annotation_text="Exit")
             if pdh: fig.add_hline(y=pdh, line_dash="dashdot", line_color="gold", annotation_text="PDH")
             if pdl: fig.add_hline(y=pdl, line_dash="dashdot", line_color="violet", annotation_text="PDL")
-            fig.update_layout(xaxis_rangeslider_visible=False, height=380, margin=dict(l=5,r=5,t=20,b=5), template="plotly_dark", xaxis_type="category")
-            fig.update_xaxes(showticklabels=False)
             st.plotly_chart(fig, use_container_width=True)
         else:
-            st.warning("ডেটা লোড হয়নি, আবার চেষ্টা করুন।")
+            st.warning("⚠️ ডেটা লোড হয়নি, কিছুক্ষণ পর আবার চেষ্টা করুন।")
 
+# ==================== TAB 2: ADVANCED VISUAL SMC ====================
 with tab2:
     s1, s2 = st.columns(2)
     sp = s1.selectbox("পেয়ার", list(pairs.keys()), key="p2")
     stf = s2.selectbox("টাইমফ্রেম", list(tfs.keys()), index=2, key="tf2")
-    if st.button("⚡ ফুল SMC অ্যানালাইসিস দেখুন", use_container_width=True, type="primary", key="b2"):
+    
+    if st.button("⚡ ভিজ্যুয়াল SMC ব্রেকডাউন দেখুন", use_container_width=True, type="primary", key="b2"):
         tk = pairs[sp]
         dec = 2 if tk in ["GC=F","USDJPY=X","ETH-USD"] else 5
         dfs = get_df(tk, *tfs[stf])
-        if len(dfs) >= 30:
-            ps = dfs.iloc[-40:].copy()
+        
+        if len(dfs) >= 35:
+            ps = dfs.iloc[-45:].copy().reset_index(drop=True)
             c = float(ps['Close'].iloc[-1])
             mid = len(ps) // 2
             
-            h1, h2 = float(ps.iloc[:mid]['High'].max()), float(ps.iloc[mid:-1]['High'].max())
-            l1, l2 = float(ps.iloc[:mid]['Low'].min()), float(ps.iloc[mid:-1]['Low'].min())
-
+            h1_idx = int(ps.iloc[:mid]['High'].idxmax())
+            h2_idx = int(ps.iloc[mid:-1]['High'].idxmax())
+            l1_idx = int(ps.iloc[:mid]['Low'].idxmin())
+            l2_idx = int(ps.iloc[mid:-1]['Low'].idxmin())
+            
+            h1, h2 = float(ps['High'].iloc[h1_idx]), float(ps['High'].iloc[h2_idx])
+            l1, l2 = float(ps['Low'].iloc[l1_idx]), float(ps['Low'].iloc[l2_idx])
+            
             h_lbl = "HH" if h2 > h1 else "LH"
             l_lbl = "HL" if l2 > l1 else "LL"
-            ms_text = f"Uptrend ({h_lbl} & {l_lbl})" if (h2 > h1 and l2 > l1) else (f"Downtrend ({h_lbl} & {l_lbl})" if (h2 < h1 and l2 < l1) else f"Transition ({h_lbl} / {l_lbl})")
-
+            
+            # ১. Market Structure (BOS / CHoCH)
+            st.markdown("### ১. মার্কেট স্ট্রাকচার (BOS ও CHoCH)")
             if c > h2:
-                bos_choch = f"🚀 {'BOS (Trend Continuation)' if h2 > h1 else 'CHoCH (Reversal Signal)'} @ {round(h2, dec)}"
+                ms_type = "🚀 Bullish BOS (ট্রেন্ড কন্টিনিউয়েশন)" if h2 > h1 else "🔄 Bullish CHoCH (ট্রেন্ড রিভার্সাল)"
+                ms_desc = f"প্রাইস আগের সুইং হাই **{round(h2, dec)}** ব্রেক করে উপরে ক্লোজ করেছে।"
             elif c < l2:
-                bos_choch = f"🔻 {'BOS (Trend Continuation)' if l2 < l1 else 'CHoCH (Reversal Signal)'} @ {round(l2, dec)}"
+                ms_type = "🔻 Bearish BOS (ট্রেন্ড কন্টিনিউয়েশন)" if l2 < l1 else "🔄 Bearish CHoCH (ট্রেন্ড রিভার্সাল)"
+                ms_desc = f"প্রাইস আগের সুইং লো **{round(l2, dec)}** ব্রেক করে নিচে ক্লোজ করেছে।"
             else:
-                bos_choch = f"🟡 Ranging Structure ({round(l2, dec)} - {round(h2, dec)})"
-
+                ms_type = f"🟡 Internal Structure ({h_lbl} & {l_lbl})"
+                ms_desc = f"মার্কেট বর্তমানে **{round(l2, dec)}** এবং **{round(h2, dec)}** রেঞ্জের ভেতরে স্ট্রাকচার তৈরি করছে।"
+            
+            st.info(f"**{ms_type}** — {ms_desc}")
+            fig1 = base_chart(ps, h=290)
+            fig1.add_trace(go.Scatter(
+                x=[h1_idx, h2_idx], y=[h1, h2],
+                mode="markers+text+lines", text=["H1", h_lbl], textposition="top center",
+                line=dict(color="orange", dash="dot", width=1.5), marker=dict(size=8, color="orange")
+            ))
+            fig1.add_trace(go.Scatter(
+                x=[l1_idx, l2_idx], y=[l1, l2],
+                mode="markers+text+lines", text=["L1", l_lbl], textposition="bottom center",
+                line=dict(color="cyan", dash="dot", width=1.5), marker=dict(size=8, color="cyan")
+            ))
+            fig1.add_hline(y=h2, line_dash="dash", line_color="orange", annotation_text=f"Break High ({round(h2,dec)})")
+            fig1.add_hline(y=l2, line_dash="dash", line_color="cyan", annotation_text=f"Break Low ({round(l2,dec)})")
+            st.plotly_chart(fig1, use_container_width=True)
+            
+            st.divider()
+            
+            # ২. Premium, Discount & OTE Zone
+            st.markdown("### ২. প্রিমিয়াম, ডিসকাউন্ট ও OTE জোন")
             sw_hi, sw_lo = max(h1, h2), min(l1, l2)
+            rng = sw_hi - sw_lo
             eq = (sw_hi + sw_lo) / 2
-            pd_zone = "🔴 Premium Zone (Sell Area)" if c > eq else "🟢 Discount Zone (Buy Area)"
-            bsl, ssl = round(sw_hi, dec), round(sw_lo, dec)
-
-            bfvg_l = bfvg_h = sfvg_l = sfvg_h = None
-            bob_l = bob_h = sob_l = sob_h = None
-            for i in range(len(dfs)-2, max(len(dfs)-25, 2), -1):
-                if float(dfs['Low'].iloc[i]) > float(dfs['High'].iloc[i-2]) and bfvg_l is None:
-                    bfvg_l, bfvg_h = round(float(dfs['High'].iloc[i-2]),dec), round(float(dfs['Low'].iloc[i]),dec)
-                    bob_l, bob_h = round(float(dfs['Low'].iloc[i-2]),dec), round(float(dfs['High'].iloc[i-2]),dec)
-                if float(dfs['High'].iloc[i]) < float(dfs['Low'].iloc[i-2]) and sfvg_l is None:
-                    sfvg_l, sfvg_h = round(float(dfs['High'].iloc[i]),dec), round(float(dfs['Low'].iloc[i-2]),dec)
-                    sob_l, sob_h = round(float(dfs['Low'].iloc[i-2]),dec), round(float(dfs['High'].iloc[i-2]),dec)
-
-            st.info(f"**Structure:** {ms_text} | **Signal:** {bos_choch}")
-            c_a, c_b, c_c = st.columns(3)
-            c_a.metric("BSL (Liquidity)", bsl)
-            c_b.metric("EQ (50%)", round(eq, dec))
-            c_c.metric("SSL (Liquidity)", ssl)
-            st.caption(f"**বর্তমান অবস্থান:** {pd_zone}")
-
-            fig_smc = go.Figure(data=[go.Candlestick(x=ps.index, open=ps['Open'], high=ps['High'], low=ps['Low'], close=ps['Close'])])
-            fig_smc.add_hline(y=bsl, line_dash="dash", line_color="red", annotation_text="BSL")
-            fig_smc.add_hline(y=eq, line_dash="dot", line_color="gray", annotation_text="EQ (50%)")
-            fig_smc.add_hline(y=ssl, line_dash="dash", line_color="lime", annotation_text="SSL")
-            if bfvg_l and bfvg_h: fig_smc.add_hrect(y0=bfvg_l, y1=bfvg_h, fillcolor="green", opacity=0.2, annotation_text="Bull FVG")
-            if sfvg_l and sfvg_h: fig_smc.add_hrect(y0=sfvg_l, y1=sfvg_h, fillcolor="red", opacity=0.2, annotation_text="Bear FVG")
